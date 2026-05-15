@@ -40,9 +40,43 @@ def _ensure_development_columns() -> None:
     if "clients" not in inspector.get_table_names():
         return
     client_columns = {column["name"] for column in inspector.get_columns("clients")}
+    product_columns = (
+        {column["name"] for column in inspector.get_columns("products")}
+        if "products" in inspector.get_table_names()
+        else set()
+    )
     with engine.begin() as connection:
         if "name_2" not in client_columns:
             connection.execute(text("ALTER TABLE clients ADD COLUMN name_2 VARCHAR(512)"))
+        if "conversion_multiplier" not in product_columns:
+            connection.execute(
+                text("ALTER TABLE products ADD COLUMN conversion_multiplier NUMERIC(14, 3) NOT NULL DEFAULT 1")
+            )
+        if "product_mappings" in inspector.get_table_names():
+            connection.execute(
+                text(
+                    """
+                    UPDATE products
+                    SET conversion_multiplier = (
+                        SELECT product_mappings.conversion_multiplier
+                        FROM product_mappings
+                        WHERE product_mappings.product_id = products.id
+                          AND product_mappings.deleted_at IS NULL
+                          AND product_mappings.conversion_multiplier > 0
+                        ORDER BY product_mappings.updated_at DESC
+                        LIMIT 1
+                    )
+                    WHERE conversion_multiplier = 1
+                      AND EXISTS (
+                        SELECT 1
+                        FROM product_mappings
+                        WHERE product_mappings.product_id = products.id
+                          AND product_mappings.deleted_at IS NULL
+                          AND product_mappings.conversion_multiplier > 0
+                      )
+                    """
+                )
+            )
 
 
 @asynccontextmanager

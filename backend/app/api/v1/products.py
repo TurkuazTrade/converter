@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -42,6 +43,7 @@ def create_product(
         item_code=normalize_item_code(payload.item_code),
         name=name,
         price_code=normalize_item_code(payload.price_code),
+        conversion_multiplier=_payload_multiplier(payload.conversion_multiplier),
         is_active=payload.is_active,
     )
     barcode = normalize_barcode(payload.barcode)
@@ -77,6 +79,8 @@ def update_product(
         product.name = name
     if payload.price_code is not None:
         product.price_code = normalize_item_code(payload.price_code)
+    if payload.conversion_multiplier is not None:
+        product.conversion_multiplier = _payload_multiplier(payload.conversion_multiplier)
     if payload.is_active is not None:
         product.is_active = payload.is_active
     if payload.barcode is not None:
@@ -122,3 +126,15 @@ def _replace_primary_barcode(product: Product, barcode: str | None) -> None:
     for item in active_barcodes:
         if item is not primary:
             item.is_primary = False
+
+
+def _payload_multiplier(value: float | None) -> Decimal:
+    if value in (None, ""):
+        return Decimal("1")
+    try:
+        multiplier = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        raise HTTPException(status_code=400, detail="Conversion multiplier must be a number") from None
+    if multiplier <= 0:
+        raise HTTPException(status_code=400, detail="Conversion multiplier must be greater than zero")
+    return multiplier

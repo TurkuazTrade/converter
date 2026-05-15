@@ -89,7 +89,13 @@ class ImportService:
                 continue
             product = self._find_product(barcode=barcode, item_code=item_code)
             if product is None:
-                product = Product(item_code=item_code, name=name, price_code=price_code, is_active=True)
+                product = Product(
+                    item_code=item_code,
+                    name=name,
+                    price_code=price_code,
+                    conversion_multiplier=conversion_multiplier,
+                    is_active=True,
+                )
                 self.db.add(product)
                 self.db.flush()
                 inserted += 1
@@ -98,6 +104,7 @@ class ImportService:
                 if explicit_name:
                     product.name = explicit_name
                 product.price_code = price_code or product.price_code
+                product.conversion_multiplier = conversion_multiplier
                 product.is_active = True
                 updated += 1
             barcode_key = (product.id, barcode) if barcode else None

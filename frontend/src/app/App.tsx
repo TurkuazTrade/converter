@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Link, Navigate, NavLink, Route, Routes } from 'react-router-dom';
 import { ClientsPage } from '../pages/ClientsPage';
 import { LoginPage } from '../pages/LoginPage';
@@ -10,6 +11,20 @@ import { UnresolvedItemsPage } from '../pages/UnresolvedItemsPage';
 import { UploadOrderPage } from '../pages/UploadOrderPage';
 
 function Layout() {
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    const saved = localStorage.getItem('theme');
+    if (saved === 'dark' || saved === 'light') return saved;
+    return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle('theme-light', theme === 'light');
+    root.classList.toggle('theme-dark', theme === 'dark');
+    root.style.colorScheme = theme;
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
   if (!localStorage.getItem('access_token')) {
     return <Navigate to="/login" replace />;
   }
@@ -37,6 +52,16 @@ function Layout() {
           <span className="hidden rounded-full border border-emerald-800 bg-emerald-950/40 px-3 py-1 text-xs text-emerald-200 sm:inline-flex">
             Testing
           </span>
+          <button
+            aria-label={theme === 'dark' ? 'Включить светлую тему' : 'Включить темную тему'}
+            className="theme-toggle"
+            title={theme === 'dark' ? 'Светлая тема' : 'Темная тема'}
+            type="button"
+            onClick={() => setTheme((value) => (value === 'dark' ? 'light' : 'dark'))}
+          >
+            <span className={theme === 'light' ? 'theme-toggle-icon theme-toggle-icon-active' : 'theme-toggle-icon'}>☀</span>
+            <span className={theme === 'dark' ? 'theme-toggle-icon theme-toggle-icon-active' : 'theme-toggle-icon'}>☾</span>
+          </button>
           <button className="header-action" onClick={logout}>Выйти</button>
         </div>
       </header>

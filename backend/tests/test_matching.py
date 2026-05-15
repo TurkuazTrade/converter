@@ -46,8 +46,8 @@ def test_matching_resolves_product_by_saved_mapping(db_session: Session) -> None
     assert item.status == OrderItemStatus.RESOLVED.value
 
 
-def test_matching_applies_conversion_multiplier_once(db_session: Session) -> None:
-    product = _product(db_session, item_code="ERP-BOX")
+def test_matching_applies_product_conversion_multiplier_once(db_session: Session) -> None:
+    product = _product(db_session, item_code="ERP-BOX", conversion_multiplier=Decimal("12"))
     order, item = _order_with_item(db_session, barcode="9999999999999")
     item.quantity = Decimal("3")
     item.source_quantity = Decimal("3")
@@ -193,8 +193,14 @@ def _product(
     item_code: str,
     name: str = "Product",
     barcode: str | None = None,
+    conversion_multiplier: Decimal = Decimal("1"),
 ) -> Product:
-    product = Product(item_code=item_code, name=name, is_active=True)
+    product = Product(
+        item_code=item_code,
+        name=name,
+        conversion_multiplier=conversion_multiplier,
+        is_active=True,
+    )
     db_session.add(product)
     db_session.flush()
     if barcode:

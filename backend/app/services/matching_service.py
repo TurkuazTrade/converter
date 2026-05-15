@@ -159,7 +159,7 @@ class MatchingService:
             if mapped is not None:
                 return ProductMatch(
                     product=mapped.product,
-                    conversion_multiplier=self._multiplier(mapped.conversion_multiplier),
+                    conversion_multiplier=self._product_multiplier(mapped.product),
                 )
 
             by_barcode = self.db.scalar(
@@ -174,7 +174,7 @@ class MatchingService:
                 )
             )
             if by_barcode is not None:
-                return ProductMatch(product=by_barcode, conversion_multiplier=Decimal("1"))
+                return ProductMatch(product=by_barcode, conversion_multiplier=self._product_multiplier(by_barcode))
 
         if item.raw_item_code:
             mapped_by_item_code = self.db.scalar(
@@ -192,7 +192,7 @@ class MatchingService:
             if mapped_by_item_code is not None:
                 return ProductMatch(
                     product=mapped_by_item_code.product,
-                    conversion_multiplier=self._multiplier(mapped_by_item_code.conversion_multiplier),
+                    conversion_multiplier=self._product_multiplier(mapped_by_item_code.product),
                 )
 
             by_code = self.db.scalar(
@@ -203,7 +203,7 @@ class MatchingService:
                 )
             )
             if by_code is not None:
-                return ProductMatch(product=by_code, conversion_multiplier=Decimal("1"))
+                return ProductMatch(product=by_code, conversion_multiplier=self._product_multiplier(by_code))
 
         if item.normalized_name:
             mapped_by_name = self.db.scalar(
@@ -221,7 +221,7 @@ class MatchingService:
             if mapped_by_name is not None:
                 return ProductMatch(
                     product=mapped_by_name.product,
-                    conversion_multiplier=self._multiplier(mapped_by_name.conversion_multiplier),
+                    conversion_multiplier=self._product_multiplier(mapped_by_name.product),
                 )
 
         return None
@@ -239,6 +239,7 @@ class MatchingService:
             raise ValueError("Order item or product not found.")
         order = self.db.get(Order, item.order_id)
         multiplier = self._multiplier(conversion_multiplier or item.conversion_multiplier)
+        product.conversion_multiplier = multiplier
         mapping = ProductMapping(
             converter_type=order.converter_type if order else "",
             raw_barcode=item.raw_barcode,
@@ -272,6 +273,10 @@ class MatchingService:
         item.conversion_multiplier = multiplier
         item.quantity = source_quantity * multiplier
         item.source_payload = {**(item.source_payload or {}), "manual_conversion_multiplier": str(multiplier)}
+
+    @classmethod
+    def _product_multiplier(cls, product: Product) -> Decimal:
+        return cls._multiplier(product.conversion_multiplier)
 
     def save_client_mapping(self, order_id: int, client_id: int, user_id: int) -> None:
         order = self.db.get(Order, order_id)

@@ -12,6 +12,7 @@ class ProductRead(BaseModel):
     item_code: str | None
     name: str
     price_code: str | None
+    conversion_multiplier: float
     is_active: bool
     created_at: datetime
     barcodes: list["ProductBarcodeRead"] = []
@@ -31,6 +32,7 @@ class ProductCreate(BaseModel):
     name: str
     price_code: str | None = None
     barcode: str | None = None
+    conversion_multiplier: float | None = None
     is_active: bool = True
 
 
@@ -39,4 +41,5 @@ class ProductUpdate(BaseModel):
     name: str | None = None
     price_code: str | None = None
     barcode: str | None = None
+    conversion_multiplier: float | None = None
     is_active: bool | None = None
