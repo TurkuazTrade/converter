@@ -83,6 +83,9 @@ class MatchingService:
 
     def match_item(self, converter_type: str, item: OrderItem) -> None:
         source_quantity = self._source_quantity(item)
+        item.source_quantity = source_quantity
+        item.conversion_multiplier = Decimal("1")
+        item.quantity = source_quantity
         if source_quantity <= 0:
             item.status = OrderItemStatus.INVALID_QUANTITY.value
             item.error_message = "Quantity must be greater than zero."
@@ -197,12 +200,19 @@ class MatchingService:
 
         return None
 
-    def save_product_mapping(self, order_item_id: int, product_id: int, user_id: int) -> None:
+    def save_product_mapping(
+        self,
+        order_item_id: int,
+        product_id: int,
+        user_id: int,
+        conversion_multiplier: Decimal | None = None,
+    ) -> None:
         item = self.db.get(OrderItem, order_item_id)
         product = self.db.get(Product, product_id)
         if item is None or product is None:
             raise ValueError("Order item or product not found.")
         order = self.db.get(Order, item.order_id)
+        multiplier = self._multiplier(conversion_multiplier or item.conversion_multiplier)
         mapping = ProductMapping(
             converter_type=order.converter_type if order else "",
             raw_barcode=item.raw_barcode,
@@ -211,15 +221,16 @@ class MatchingService:
             normalized_item_code=normalize_key(item.raw_item_code),
             raw_name=item.raw_name,
             normalized_name=item.normalized_name,
-            conversion_multiplier=item.conversion_multiplier or Decimal("1"),
+            conversion_multiplier=multiplier,
             product_id=product.id,
             created_by_id=user_id,
         )
         self.db.add(mapping)
+        self.db.flush()
         item.product_id = product.id
         item.item_code = product.item_code or item.raw_item_code or item.normalized_barcode
         item.source_quantity = self._source_quantity(item)
-        item.conversion_multiplier = self._multiplier(item.conversion_multiplier)
+        item.conversion_multiplier = multiplier
         item.quantity = item.source_quantity * item.conversion_multiplier
         item.status = OrderItemStatus.RESOLVED.value
         item.error_message = None

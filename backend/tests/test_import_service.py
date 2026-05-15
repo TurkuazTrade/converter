@@ -36,17 +36,20 @@ async def test_import_products_reads_piton_convert_sheet(db_session: Session) ->
 
     product = db_session.scalar(select(Product).where(Product.item_code == "203200105650133015400030"))
     assert product is not None
+    assert product.name == ""
     assert result["converter_type"] == "piton"
     assert result["inserted"] == 1
     assert result["mappings_inserted"] == 1
     assert db_session.scalar(select(ProductBarcode).where(ProductBarcode.barcode == "5029053540108")) is not None
-    assert db_session.scalar(
+    mapping = db_session.scalar(
         select(ProductMapping).where(
             ProductMapping.converter_type == "piton",
             ProductMapping.normalized_barcode == "5029053540108",
             ProductMapping.product_id == product.id,
         )
-    ) is not None
+    )
+    assert mapping is not None
+    assert mapping.conversion_multiplier == Decimal("1.000")
 
 
 @pytest.mark.asyncio
@@ -82,13 +85,33 @@ async def test_import_products_skips_duplicate_mappings_in_same_file(db_session:
 
 
 @pytest.mark.asyncio
+async def test_import_products_keeps_real_human_name(db_session: Session) -> None:
+    upload = _upload_workbook(
+        "PITON CONVERT.xlsx",
+        {
+            "convert": [
+                ["SKU_NO", "BARCODE", "Name", "Conv. Quantity"],
+                ["203200105650133015400030", "5029053540108", "Мыло Dalan огурец 150г", 1],
+            ],
+        },
+    )
+
+    await ImportService(db_session).import_products(upload)
+    db_session.flush()
+
+    product = db_session.scalar(select(Product).where(Product.item_code == "203200105650133015400030"))
+    assert product is not None
+    assert product.name == "Мыло Dalan огурец 150г"
+
+
+@pytest.mark.asyncio
 async def test_import_products_reads_globys_convert_item_code_mapping(db_session: Session) -> None:
     upload = _upload_workbook(
         "GLOBYS CONVERT new.xlsx",
         {
             "convert": [
                 ["а", "Client Stock Code", "Conv. Quantity", "Turkuaz Alter 1. Stock Code"],
-                ["201082060295409691780001", "Ц0154218", 1, None],
+                ["201082060295409691780001", "Ц0154218", 12, None],
             ]
         },
     )
@@ -98,15 +121,18 @@ async def test_import_products_reads_globys_convert_item_code_mapping(db_session
 
     product = db_session.scalar(select(Product).where(Product.item_code == "201082060295409691780001"))
     assert product is not None
+    assert product.name == ""
     assert result["converter_type"] == "globus"
     assert result["mappings_inserted"] == 1
-    assert db_session.scalar(
+    mapping = db_session.scalar(
         select(ProductMapping).where(
             ProductMapping.converter_type == "globus",
             ProductMapping.normalized_item_code == "ц0154218",
             ProductMapping.product_id == product.id,
         )
-    ) is not None
+    )
+    assert mapping is not None
+    assert mapping.conversion_multiplier == Decimal("12.000")
 
     order = Order(converter_type="globus", status=OrderStatus.PROCESSING.value, parsed_snapshot={})
     item = OrderItem(
@@ -127,6 +153,9 @@ async def test_import_products_reads_globys_convert_item_code_mapping(db_session
 
     assert item.product_id == product.id
     assert item.item_code == "201082060295409691780001"
+    assert item.source_quantity == Decimal("2.000")
+    assert item.conversion_multiplier == Decimal("12.000")
+    assert item.quantity == Decimal("24.000")
     assert item.status == OrderItemStatus.RESOLVED.value
 
 

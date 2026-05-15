@@ -24,8 +24,9 @@ def list_clients(
     current_user: Annotated[User, Depends(get_current_user)],
     search: str = "",
     limit: int = Query(default=100, le=500),
+    offset: int = Query(default=0, ge=0),
 ) -> list[ClientRead]:
-    return ClientRepository(db).list(search=search, limit=limit)
+    return ClientRepository(db).list(search=search, limit=limit, offset=offset)
 
 
 @router.post("", response_model=ClientRead)

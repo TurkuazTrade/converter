@@ -1,4 +1,4 @@
-# Bishkek CRM Web Module
+# Turkuaz CRM Web Module
 
 First web-based module of the future internal CRM. It replaces the desktop-only converter approach with a FastAPI + React architecture focused on order upload, preview, unresolved matching, reprocess, and export history.
 
@@ -163,7 +163,7 @@ Included tests:
 
 ---
 
-# Bishkek CRM Web Module - русская версия
+# Turkuaz CRM Web Module - русская версия
 
 Это foundation нового web-модуля будущей CRM. Старый desktop converter не переносится как архитектура: он остается только reference по бизнес-логике и Excel-форматам. Новый проект построен как FastAPI backend + React frontend.
 

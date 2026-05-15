@@ -1,1 +1,1 @@
-"""Bishkek CRM backend package."""
+"""Turkuaz CRM backend package."""

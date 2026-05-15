@@ -10,8 +10,12 @@ class OrderRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def list(self, limit: int = 100) -> list[Order]:
-        return list(self.db.scalars(select(Order).order_by(desc(Order.created_at)).limit(limit)))
+    def list(self, limit: int = 100, offset: int = 0) -> list[Order]:
+        return list(
+            self.db.scalars(
+                select(Order).order_by(desc(Order.created_at)).offset(offset).limit(limit)
+            )
+        )
 
     def get(self, order_id: int) -> Order | None:
         return self.db.get(Order, order_id)

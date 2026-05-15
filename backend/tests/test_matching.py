@@ -46,6 +46,35 @@ def test_matching_resolves_product_by_saved_mapping(db_session: Session) -> None
     assert item.status == OrderItemStatus.RESOLVED.value
 
 
+def test_matching_applies_conversion_multiplier_once(db_session: Session) -> None:
+    product = _product(db_session, item_code="ERP-BOX")
+    order, item = _order_with_item(db_session, barcode="9999999999999")
+    item.quantity = Decimal("3")
+    item.source_quantity = Decimal("3")
+    db_session.add(
+        ProductMapping(
+            converter_type="piton",
+            raw_barcode="9999999999999",
+            normalized_barcode="9999999999999",
+            conversion_multiplier=Decimal("12"),
+            product_id=product.id,
+            is_active=True,
+        )
+    )
+    db_session.flush()
+
+    service = MatchingService(db_session)
+    service.match_order(order.id)
+    service.match_order(order.id)
+
+    assert item.product_id == product.id
+    assert item.item_code == "ERP-BOX"
+    assert item.source_quantity == Decimal("3.000")
+    assert item.conversion_multiplier == Decimal("12.000")
+    assert item.quantity == Decimal("36.000")
+    assert item.status == OrderItemStatus.RESOLVED.value
+
+
 def test_matching_keeps_unknown_barcode_unresolved(db_session: Session) -> None:
     order, item = _order_with_item(db_session, barcode="404")
 
@@ -95,6 +124,37 @@ def test_resolve_mapping_then_rematch_sets_order_ready(db_session: Session) -> N
     assert order.status == OrderStatus.READY_TO_EXPORT.value
     assert item.product_id == product.id
     assert item.status == OrderItemStatus.RESOLVED.value
+
+
+def test_manual_resolve_can_save_conversion_multiplier(db_session: Session) -> None:
+    product = _product(db_session, item_code="ERP-MANUAL")
+    user = User(
+        email="manual@example.com",
+        hashed_password="hash",
+        full_name="Manual",
+        role="operator",
+        is_active=True,
+    )
+    db_session.add(user)
+    db_session.flush()
+    order, item = _order_with_item(db_session, barcode="manual-barcode")
+    item.quantity = Decimal("5")
+    item.source_quantity = Decimal("5")
+    db_session.flush()
+
+    MatchingService(db_session).save_product_mapping(
+        item.id,
+        product.id,
+        user_id=user.id,
+        conversion_multiplier=Decimal("0.5"),
+    )
+    result = ReprocessService(db_session).rematch_only(order.id, user_id=user.id)
+
+    assert result["status"] == OrderStatus.NEEDS_REVIEW.value
+    assert item.product_id == product.id
+    assert item.source_quantity == Decimal("5.000")
+    assert item.conversion_multiplier == Decimal("0.500")
+    assert item.quantity == Decimal("2.500")
 
 
 def _product(

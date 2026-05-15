@@ -1,13 +1,29 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
+import { PaginationControls } from '../components/PaginationControls';
 
 export function ClientsPage() {
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(0);
+  const [limit, setLimit] = useState(50);
   const { data, isLoading } = useQuery({
-    queryKey: ['clients', search],
-    queryFn: async () => (await api.get('/clients', { params: { search } })).data,
+    queryKey: ['clients', search, page, limit],
+    queryFn: async () => (
+      await api.get('/clients', { params: { search, limit, offset: page * limit } })
+    ).data,
   });
+  const clients = data ?? [];
+
+  function updateSearch(value: string) {
+    setSearch(value);
+    setPage(0);
+  }
+
+  function updateLimit(value: number) {
+    setLimit(value);
+    setPage(0);
+  }
 
   return (
     <main className="page space-y-4">
@@ -18,8 +34,15 @@ export function ClientsPage() {
         </div>
       </div>
       <div className="flex flex-wrap gap-3">
-        <input className="input w-full md:w-96" placeholder="Поиск по коду, названию или адресу" value={search} onChange={(event) => setSearch(event.target.value)} />
+        <input className="input w-full md:w-96" placeholder="Поиск по коду, названию или адресу" value={search} onChange={(event) => updateSearch(event.target.value)} />
       </div>
+      <PaginationControls
+        page={page}
+        limit={limit}
+        itemCount={clients.length}
+        onPageChange={setPage}
+        onLimitChange={updateLimit}
+      />
       <section className="panel overflow-auto p-0">
         {isLoading ? (
           <p className="p-5 text-slate-400">Загрузка...</p>
@@ -35,7 +58,7 @@ export function ClientsPage() {
               </tr>
             </thead>
             <tbody>
-              {(data ?? []).map((client: any) => (
+              {clients.map((client: any) => (
                 <tr key={client.id}>
                   <td>{client.id}</td>
                   <td>{client.client_code}</td>

@@ -11,6 +11,8 @@ type PreviewItem = {
   raw_item_code: string | null;
   item_code: string | null;
   raw_name: string | null;
+  source_quantity: number | null;
+  conversion_multiplier: number;
   quantity: number;
   status: string;
   error_message: string | null;
@@ -197,6 +199,8 @@ export function OrderPreviewPage() {
               <th>Код выгрузки</th>
               <th>Товар</th>
               <th>Кол-во</th>
+              <th>Множ.</th>
+              <th>Итог</th>
               <th>Статус</th>
             </tr>
           </thead>
@@ -208,6 +212,8 @@ export function OrderPreviewPage() {
                 <td>{item.raw_item_code}</td>
                 <td>{item.item_code}</td>
                 <td>{item.raw_name}</td>
+                <td>{item.source_quantity ?? item.quantity}</td>
+                <td>{item.conversion_multiplier}</td>
                 <td>{item.quantity}</td>
                 <td className={item.status === 'resolved' ? 'text-emerald-300' : 'text-amber-300'}>
                   {itemStatusLabels[item.status] ?? item.status}{item.error_message ? `: ${item.error_message}` : ''}

@@ -24,7 +24,7 @@ export function LoginPage() {
     <main className="page flex min-h-screen items-center justify-center">
       <form onSubmit={submit} className="panel w-full max-w-md space-y-4">
         <div>
-          <h1 className="text-xl font-semibold">Вход в Bishkek CRM</h1>
+          <h1 className="text-xl font-semibold">Вход в Turkuaz CRM</h1>
           <p className="mt-1 text-sm text-slate-400">Введите данные администратора.</p>
         </div>
         <label className="block space-y-2">

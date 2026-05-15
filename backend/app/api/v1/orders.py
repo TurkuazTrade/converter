@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from typing import Annotated
 from urllib.parse import quote
 
@@ -52,8 +53,9 @@ def list_orders(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
     limit: int = Query(default=100, le=500),
+    offset: int = Query(default=0, ge=0),
 ) -> list[OrderRead]:
-    orders = OrderRepository(db).list(limit=limit)
+    orders = OrderRepository(db).list(limit=limit, offset=offset)
     for order in orders:
         _refresh_order_state(db, order)
     db.commit()
@@ -108,6 +110,8 @@ def order_preview(
                 "raw_item_code": item.raw_item_code,
                 "item_code": item.item_code,
                 "raw_name": item.raw_name,
+                "source_quantity": float(item.source_quantity) if item.source_quantity is not None else None,
+                "conversion_multiplier": float(item.conversion_multiplier),
                 "quantity": float(item.quantity),
                 "status": item.status,
                 "error_message": item.error_message,
@@ -174,6 +178,8 @@ def order_debug(
                 "product_id": item.product_id,
                 "product_item_code": item.product.item_code if item.product else None,
                 "product_name": item.product.name if item.product else None,
+                "source_quantity": float(item.source_quantity) if item.source_quantity is not None else None,
+                "conversion_multiplier": float(item.conversion_multiplier),
                 "quantity": float(item.quantity),
                 "status": item.status,
                 "error_message": item.error_message,
@@ -201,6 +207,8 @@ def unresolved_items(
             "raw_barcode": item.raw_barcode,
             "raw_item_code": item.raw_item_code,
             "raw_name": item.raw_name,
+            "source_quantity": float(item.source_quantity) if item.source_quantity is not None else None,
+            "conversion_multiplier": float(item.conversion_multiplier),
             "quantity": float(item.quantity),
             "status": item.status,
             "error_message": item.error_message,
@@ -220,7 +228,12 @@ def resolve_product(
 ) -> dict:
     order_item_id = int(payload["order_item_id"])
     product_id = int(payload["product_id"])
-    MatchingService(db).save_product_mapping(order_item_id, product_id, current_user.id)
+    MatchingService(db).save_product_mapping(
+        order_item_id,
+        product_id,
+        current_user.id,
+        conversion_multiplier=_payload_decimal(payload.get("conversion_multiplier")),
+    )
     ReprocessService(db).rematch_only(order_id, user_id=current_user.id)
     db.commit()
     return {"order_id": order_id, "order_item_id": order_item_id, "status": "resolved"}
@@ -363,3 +376,12 @@ def _review_message(unresolved_count: int, client_unresolved: bool) -> str | Non
 def _attachment_header(filename: str) -> str:
     quoted = quote(filename)
     return f'attachment; filename="{filename}"; filename*=UTF-8\'\'{quoted}'
+
+
+def _payload_decimal(value) -> Decimal | None:
+    if value in (None, ""):
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None

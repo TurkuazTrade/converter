@@ -88,6 +88,8 @@ class OrderProcessingService:
                         normalized_name=parsed_item.normalized_name,
                         raw_item_code=parsed_item.raw_item_code,
                         item_code=parsed_item.raw_item_code or parsed_item.normalized_barcode,
+                        source_quantity=parsed_item.quantity or Decimal("0"),
+                        conversion_multiplier=Decimal("1"),
                         quantity=parsed_item.quantity or Decimal("0"),
                         row_number=parsed_item.row_number,
                         status=(
@@ -180,6 +182,8 @@ class OrderProcessingService:
                     normalized_name=parsed_item.normalized_name,
                     raw_item_code=parsed_item.raw_item_code,
                     item_code=parsed_item.raw_item_code or parsed_item.normalized_barcode,
+                    source_quantity=parsed_item.quantity or Decimal("0"),
+                    conversion_multiplier=Decimal("1"),
                     quantity=parsed_item.quantity or Decimal("0"),
                     row_number=parsed_item.row_number,
                     source_payload=parsed_item.source_payload,

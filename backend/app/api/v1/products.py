@@ -21,8 +21,9 @@ def list_products(
     current_user: Annotated[User, Depends(get_current_user)],
     search: str = "",
     limit: int = Query(default=100, le=500),
+    offset: int = Query(default=0, ge=0),
 ) -> list[ProductRead]:
-    return ProductRepository(db).list(search=search, limit=limit)
+    return ProductRepository(db).list(search=search, limit=limit, offset=offset)
 
 
 @router.post("/import")

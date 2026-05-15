@@ -14,6 +14,16 @@ class ProductRead(BaseModel):
     price_code: str | None
     is_active: bool
     created_at: datetime
+    barcodes: list["ProductBarcodeRead"] = []
+
+
+class ProductBarcodeRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    barcode: str
+    is_primary: bool
+    is_active: bool
 
 
 class ProductUpdate(BaseModel):

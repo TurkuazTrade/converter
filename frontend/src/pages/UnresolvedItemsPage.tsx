@@ -3,11 +3,19 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 
+type ProductOption = {
+  id: number;
+  item_code: string | null;
+  name: string;
+  barcodes?: { barcode: string; is_active: boolean }[];
+};
+
 export function UnresolvedItemsPage() {
   const { orderId } = useParams();
   const queryClient = useQueryClient();
   const [productSearch, setProductSearch] = useState('');
   const [selected, setSelected] = useState<Record<number, string>>({});
+  const [multipliers, setMultipliers] = useState<Record<number, string>>({});
   const { data, isLoading } = useQuery({
     queryKey: ['unresolved', orderId],
     queryFn: async () => (await api.get(`/orders/${orderId}/unresolved`)).data,
@@ -16,8 +24,10 @@ export function UnresolvedItemsPage() {
   const { data: products } = useQuery({
     queryKey: ['product-search', productSearch],
     queryFn: async () => (await api.get('/products', { params: { search: productSearch, limit: 50 } })).data,
-    enabled: true,
+    enabled: productSearch.trim().length >= 2,
   });
+  const searchReady = productSearch.trim().length >= 2;
+  const productOptions = searchReady ? (products ?? []) as ProductOption[] : [];
 
   async function resolveProduct(orderItemId: number) {
     const productId = selected[orderItemId];
@@ -25,8 +35,14 @@ export function UnresolvedItemsPage() {
     await api.post(`/orders/${orderId}/resolve-product`, {
       order_item_id: orderItemId,
       product_id: Number(productId),
+      conversion_multiplier: Number(multipliers[orderItemId] || 1),
     });
     setSelected((prev) => {
+      const next = { ...prev };
+      delete next[orderItemId];
+      return next;
+    });
+    setMultipliers((prev) => {
       const next = { ...prev };
       delete next[orderItemId];
       return next;
@@ -49,10 +65,10 @@ export function UnresolvedItemsPage() {
           onChange={(event) => setProductSearch(event.target.value)}
         />
         <p className="text-sm text-slate-400">
-          Выберите товар из справочника для каждой строки. Поиск фильтрует список по barcode, коду или названию.
+          Введите barcode, код выгрузки или часть названия, затем выберите найденный товар.
         </p>
         <p className="text-xs text-slate-500">
-          Показано товаров: {(products ?? []).length}
+          {searchReady ? `Найдено товаров: ${productOptions.length}` : 'Список появится после поиска.'}
         </p>
       </section>
       <section className="panel overflow-auto p-0">
@@ -67,39 +83,60 @@ export function UnresolvedItemsPage() {
                 <th>Код сети</th>
                 <th>Товар из заказа</th>
                 <th>Кол-во</th>
+                <th>Множ.</th>
+                <th>Итог</th>
                 <th>Товар в справочнике</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {data.items.map((item: any) => (
-                <tr key={item.id}>
-                  <td>{item.row_number}</td>
-                  <td>{item.raw_barcode}</td>
-                  <td>{item.raw_item_code}</td>
-                  <td>{item.raw_name}</td>
-                  <td>{item.quantity}</td>
-                  <td>
-                    <select
-                      className="input w-72"
-                      value={selected[item.id] ?? ''}
-                      onChange={(event) => setSelected((prev) => ({ ...prev, [item.id]: event.target.value }))}
-                    >
-                      <option value="">{(products ?? []).length ? 'Выберите товар' : 'Товары не найдены'}</option>
-                      {(products ?? []).map((product: any) => (
-                        <option key={product.id} value={product.id}>
-                          {product.item_code} · {product.name}
+              {data.items.map((item: any) => {
+                const sourceQuantity = Number(item.source_quantity ?? item.quantity ?? 0);
+                const multiplierValue = multipliers[item.id] ?? String(item.conversion_multiplier ?? 1);
+                const multiplier = Number(multiplierValue) > 0 ? Number(multiplierValue) : 1;
+                const finalQuantity = Number((sourceQuantity * multiplier).toFixed(3));
+                return (
+                  <tr key={item.id}>
+                    <td>{item.row_number}</td>
+                    <td>{item.raw_barcode}</td>
+                    <td>{item.raw_item_code}</td>
+                    <td>{item.raw_name}</td>
+                    <td>{sourceQuantity}</td>
+                    <td>
+                      <input
+                        className="input w-24"
+                        min="0.001"
+                        step="0.001"
+                        type="number"
+                        value={multiplierValue}
+                        onChange={(event) => setMultipliers((prev) => ({ ...prev, [item.id]: event.target.value }))}
+                      />
+                    </td>
+                    <td>{finalQuantity}</td>
+                    <td>
+                      <select
+                        className="input w-72"
+                        value={selected[item.id] ?? ''}
+                        onChange={(event) => setSelected((prev) => ({ ...prev, [item.id]: event.target.value }))}
+                      >
+                        <option value="">
+                          {searchReady ? productOptions.length ? 'Выберите товар' : 'Товары не найдены' : 'Введите поиск выше'}
                         </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>
-                    <button type="button" className="button" disabled={!selected[item.id]} onClick={() => resolveProduct(item.id)}>
-                      Сохранить
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                        {productOptions.map((product) => (
+                          <option key={product.id} value={product.id}>
+                            {formatProductOption(product)}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <button type="button" className="button" disabled={!selected[item.id]} onClick={() => resolveProduct(item.id)}>
+                        Сохранить
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         ) : (
@@ -111,4 +148,26 @@ export function UnresolvedItemsPage() {
       </section>
     </main>
   );
+}
+
+function formatProductOption(product: ProductOption): string {
+  const code = product.item_code?.trim();
+  const name = product.name?.trim();
+  const activeBarcodes = (product.barcodes ?? [])
+    .filter((barcode) => barcode.is_active)
+    .map((barcode) => barcode.barcode)
+    .slice(0, 2);
+  const parts: string[] = [];
+
+  if (name && name !== code) {
+    parts.push(name);
+  }
+  if (code) {
+    parts.push(`код выгрузки: ${code}`);
+  }
+  if (activeBarcodes.length) {
+    parts.push(`barcode: ${activeBarcodes.join(', ')}`);
+  }
+
+  return parts.join(' · ') || `товар #${product.id}`;
 }

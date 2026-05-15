@@ -186,7 +186,13 @@ class ExportService:
             if not item_code:
                 blocking_errors.append(f"row {item.row_number}: unresolved product")
                 continue
-            lines.append(ExportLine(item_code=item_code, item_name=item.product.name, quantity=float(item.quantity)))
+            lines.append(
+                ExportLine(
+                    item_code=item_code,
+                    item_name=self._item_name_from_source(item),
+                    quantity=float(item.quantity),
+                )
+            )
 
         if blocking_errors:
             raise ValueError("Order is not ready to export: " + "; ".join(blocking_errors[:10]))
@@ -200,3 +206,12 @@ class ExportService:
             fiche_no=order.order_number or f"{order.id:010d}",
             lines=lines,
         )
+
+    @staticmethod
+    def _item_name_from_source(item) -> str | None:
+        raw_name = (item.raw_name or "").strip()
+        if raw_name:
+            return raw_name
+        if item.product is not None and item.product.name:
+            return item.product.name
+        return item.product.item_code if item.product is not None else item.item_code

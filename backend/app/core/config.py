@@ -10,10 +10,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    app_name: str = "Bishkek CRM"
+    app_name: str = "Turkuaz CRM"
     environment: str = "development"
     database_url: str = "sqlite:///../data/app.db"
-    secret_key: str = "dev-change-me-32-byte-secret-key-for-bishkek-crm"
+    secret_key: str = "dev-change-me-32-byte-secret-key-for-turkuaz-crm"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 720
     auto_create_admin: bool = True

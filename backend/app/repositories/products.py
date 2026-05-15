@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from sqlalchemy import exists, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models.product import Product, ProductBarcode
 
@@ -10,8 +10,15 @@ class ProductRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def list(self, search: str = "", limit: int = 100) -> list[Product]:
-        stmt = select(Product).where(Product.deleted_at.is_(None)).order_by(Product.name).limit(limit)
+    def list(self, search: str = "", limit: int = 100, offset: int = 0) -> list[Product]:
+        stmt = (
+            select(Product)
+            .options(selectinload(Product.barcodes))
+            .where(Product.deleted_at.is_(None))
+            .order_by(Product.name)
+            .offset(offset)
+            .limit(limit)
+        )
         if search:
             pattern = f"%{search}%"
             stmt = stmt.where(

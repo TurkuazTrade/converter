@@ -13,10 +13,10 @@ class ClientRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def list(self, search: str = "", limit: int = 100) -> list[Client]:
+    def list(self, search: str = "", limit: int = 100, offset: int = 0) -> list[Client]:
         base = select(Client).where(Client.deleted_at.is_(None), Client.is_active.is_(True))
         if not search:
-            return list(self.db.scalars(base.order_by(Client.name).limit(limit)))
+            return list(self.db.scalars(base.order_by(Client.name).offset(offset).limit(limit)))
 
         pattern = f"%{search}%"
         stmt = base.where(
@@ -25,7 +25,7 @@ class ClientRepository:
             | (Client.client_code_2.ilike(pattern))
             | (Client.address.ilike(pattern))
             | (Client.network_name.ilike(pattern))
-        ).order_by(Client.name).limit(limit)
+        ).order_by(Client.name).offset(offset).limit(limit)
         results = list(self.db.scalars(stmt))
         if results:
             return results
@@ -55,7 +55,7 @@ class ClientRepository:
             if score:
                 scored.append((score, client))
         scored.sort(key=lambda item: (-item[0], item[1].name))
-        return [client for _, client in scored[:limit]]
+        return [client for _, client in scored[offset : offset + limit]]
 
 
 def _fallback_tokens(search: str) -> list[str]:

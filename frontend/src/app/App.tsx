@@ -25,7 +25,7 @@ function Layout() {
     <div>
       <nav className="border-b border-slate-800 bg-slate-900">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2 px-6 py-3 text-sm">
-          <Link to="/upload" className="mr-3 font-semibold text-white">Bishkek CRM</Link>
+          <Link to="/upload" className="mr-3 font-semibold text-white">Turkuaz CRM</Link>
           <NavLink to="/upload" className={navClass}>Загрузка</NavLink>
           <NavLink to="/references" className={navClass}>Справочники</NavLink>
           <NavLink to="/orders" className={navClass}>История</NavLink>

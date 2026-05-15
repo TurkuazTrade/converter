@@ -75,8 +75,13 @@ class ImportService:
             barcode = normalize_barcode(row.get("barcode"))
             raw_item_code = normalize_item_code(row.get("raw_item_code"))
             item_code = self._first_item_code(row)
-            explicit_name = normalize_text(row.get("name"))
-            name = explicit_name or item_code or barcode or raw_item_code
+            explicit_name = self._human_product_name(
+                row.get("name"),
+                item_code=item_code,
+                barcode=barcode,
+                raw_item_code=raw_item_code,
+            )
+            name = explicit_name or ""
             price_code = normalize_item_code(row.get("price_code"))
             conversion_multiplier = self._conversion_multiplier(row.get("conversion_quantity"))
             if not item_code or not (barcode or raw_item_code or explicit_name):
@@ -307,6 +312,25 @@ class ImportService:
         if multiplier is None or multiplier <= 0:
             return Decimal("1")
         return multiplier
+
+    @staticmethod
+    def _human_product_name(
+        value: Any,
+        *,
+        item_code: str | None,
+        barcode: str | None,
+        raw_item_code: str | None,
+    ) -> str:
+        name = normalize_text(value)
+        if not name:
+            return ""
+        name_key = normalize_key(name)
+        technical_keys = {
+            normalize_key(candidate)
+            for candidate in (item_code, barcode, raw_item_code)
+            if candidate
+        }
+        return "" if name_key in technical_keys else name
 
     def _detect_converter_type(self, filename: str) -> str | None:
         detected = self.registry.detect_converter(filename)
