@@ -192,6 +192,8 @@ def unresolved_items(
     order = OrderRepository(db).get(order_id)
     if order is None:
         raise HTTPException(status_code=404, detail="Order not found")
+    _refresh_order_state(db, order)
+    db.commit()
     items = [
         {
             "id": item.id,
@@ -203,7 +205,7 @@ def unresolved_items(
             "status": item.status,
             "error_message": item.error_message,
         }
-        for item in order.items
+        for item in sorted(order.items, key=lambda row: row.row_number or 0)
         if item.status in {"unresolved", "invalid_quantity"}
     ]
     return {"order_id": order_id, "items": items, "count": len(items)}

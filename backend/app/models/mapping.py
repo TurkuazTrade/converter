@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, Index, String, UniqueConstraint
+from decimal import Decimal
+
+from sqlalchemy import Boolean, ForeignKey, Index, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, SoftDeleteMixin, TimestampMixin
@@ -28,6 +30,9 @@ class ProductMapping(Base, TimestampMixin, SoftDeleteMixin):
     normalized_item_code: Mapped[str | None] = mapped_column(String(128), index=True)
     raw_name: Mapped[str | None] = mapped_column(String(512))
     normalized_name: Mapped[str | None] = mapped_column(String(512), index=True)
+    conversion_multiplier: Mapped[Decimal] = mapped_column(
+        Numeric(14, 3), default=Decimal("1"), nullable=False
+    )
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True, nullable=False)
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

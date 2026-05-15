@@ -160,6 +160,38 @@ async def test_import_clients_reads_piton_client_sheet_and_mapping(db_session: S
 
 
 @pytest.mark.asyncio
+async def test_import_clients_skips_duplicate_client_codes_in_same_file(db_session: Session) -> None:
+    upload = _upload_workbook(
+        "PITON CONVERT.xlsx",
+        {
+            "client": [
+                ["код клиента панорама", "название клиента панорама", "название клиента питон"],
+                ["120-04-01-04-8811", "Азия Ритейл-1", "Гипермаркет 01"],
+                ["120-04-01-04-8811", "Азия Ритейл-1", "Гипермаркет 01"],
+            ]
+        },
+    )
+
+    result = await ImportService(db_session).import_clients(upload)
+    db_session.flush()
+
+    clients = list(db_session.scalars(select(Client).where(Client.client_code == "120-04-01-04-8811")))
+    mappings = list(
+        db_session.scalars(
+            select(ClientMapping).where(
+                ClientMapping.converter_type == "piton",
+                ClientMapping.normalized_client_name == "гипермаркет01",
+            )
+        )
+    )
+    assert result["inserted"] == 1
+    assert result["updated"] == 1
+    assert result["mappings_inserted"] == 1
+    assert len(clients) == 1
+    assert len(mappings) == 1
+
+
+@pytest.mark.asyncio
 async def test_import_reference_workbook_imports_convert_and_client_once(db_session: Session) -> None:
     upload = _upload_workbook(
         "PITON CONVERT.xlsx",

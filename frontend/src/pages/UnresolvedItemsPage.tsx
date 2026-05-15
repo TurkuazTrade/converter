@@ -16,7 +16,7 @@ export function UnresolvedItemsPage() {
   const { data: products } = useQuery({
     queryKey: ['product-search', productSearch],
     queryFn: async () => (await api.get('/products', { params: { search: productSearch, limit: 50 } })).data,
-    enabled: productSearch.length >= 2,
+    enabled: true,
   });
 
   async function resolveProduct(orderItemId: number) {
@@ -49,7 +49,10 @@ export function UnresolvedItemsPage() {
           onChange={(event) => setProductSearch(event.target.value)}
         />
         <p className="text-sm text-slate-400">
-          Выберите товар из справочника для каждой строки. После сохранения заказ пересчитается автоматически.
+          Выберите товар из справочника для каждой строки. Поиск фильтрует список по barcode, коду или названию.
+        </p>
+        <p className="text-xs text-slate-500">
+          Показано товаров: {(products ?? []).length}
         </p>
       </section>
       <section className="panel overflow-auto p-0">
@@ -82,7 +85,7 @@ export function UnresolvedItemsPage() {
                       value={selected[item.id] ?? ''}
                       onChange={(event) => setSelected((prev) => ({ ...prev, [item.id]: event.target.value }))}
                     >
-                      <option value="">{productSearch.length < 2 ? 'Введите поиск выше' : 'Выберите товар'}</option>
+                      <option value="">{(products ?? []).length ? 'Выберите товар' : 'Товары не найдены'}</option>
                       {(products ?? []).map((product: any) => (
                         <option key={product.id} value={product.id}>
                           {product.item_code} · {product.name}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ from app.utils.normalization import (
     normalize_item_code,
     normalize_key,
     normalize_text,
+    parse_decimal,
 )
 
 
@@ -76,6 +78,7 @@ class ImportService:
             explicit_name = normalize_text(row.get("name"))
             name = explicit_name or item_code or barcode or raw_item_code
             price_code = normalize_item_code(row.get("price_code"))
+            conversion_multiplier = self._conversion_multiplier(row.get("conversion_quantity"))
             if not item_code or not (barcode or raw_item_code or explicit_name):
                 skipped += 1
                 continue
@@ -110,6 +113,7 @@ class ImportService:
                 barcode=barcode,
                 raw_item_code=raw_item_code,
                 raw_name=explicit_name or None,
+                conversion_multiplier=conversion_multiplier,
                 seen=seen_mappings,
             ):
                 mappings_inserted += 1
@@ -125,6 +129,9 @@ class ImportService:
     def _import_clients_from_path(self, path: Path, detected_converter: str | None) -> dict:
         rows = self._rows_from_excel(path, preferred_sheets=("client", "clients", "клиенты"), kind="clients")
         inserted = updated = skipped = mappings_inserted = 0
+        seen_by_code: dict[str, Client] = {}
+        seen_by_name: dict[str, Client] = {}
+        seen_mappings: set[tuple[str, str, int]] = set()
         for row in rows:
             client_code = normalize_item_code(row.get("client_code"))
             client_code_2 = normalize_item_code(row.get("client_code_2"))
@@ -135,7 +142,12 @@ class ImportService:
             if not name and not client_code:
                 skipped += 1
                 continue
-            client = self._find_client(client_code=client_code, name=name)
+            normalized_name = normalize_key(name)
+            client = (
+                seen_by_code.get(client_code or "")
+                or seen_by_name.get(normalized_name)
+                or self._find_client(client_code=client_code, name=name)
+            )
             if client is None:
                 client = Client(
                     client_code=client_code,
@@ -148,6 +160,7 @@ class ImportService:
                     is_active=True,
                 )
                 self.db.add(client)
+                self.db.flush()
                 inserted += 1
             else:
                 client.client_code = client.client_code or client_code
@@ -159,11 +172,16 @@ class ImportService:
                 client.network_name = network_name or client.network_name
                 client.is_active = True
                 updated += 1
+            if client.client_code:
+                seen_by_code[client.client_code] = client
+            if client.normalized_name:
+                seen_by_name[client.normalized_name] = client
             if raw_client_name and detected_converter and self._save_client_mapping(
                 converter_type=detected_converter,
                 client=client,
                 raw_client_name=raw_client_name,
                 address=address,
+                seen=seen_mappings,
             ):
                 mappings_inserted += 1
         return {
@@ -283,6 +301,13 @@ class ImportService:
                 return item_code
         return None
 
+    @staticmethod
+    def _conversion_multiplier(value: Any) -> Decimal:
+        multiplier = parse_decimal(value)
+        if multiplier is None or multiplier <= 0:
+            return Decimal("1")
+        return multiplier
+
     def _detect_converter_type(self, filename: str) -> str | None:
         detected = self.registry.detect_converter(filename)
         return detected.value if detected else None
@@ -326,6 +351,7 @@ class ImportService:
         barcode: str | None,
         raw_item_code: str | None,
         raw_name: str | None,
+        conversion_multiplier: Decimal,
         seen: set[tuple[str, str, str, int]] | None = None,
     ) -> bool:
         normalized_barcode = normalize_barcode(barcode)
@@ -357,8 +383,9 @@ class ImportService:
             ProductMapping.deleted_at.is_(None),
             or_(*match_conditions),
         ]
-        exists = self.db.scalar(select(ProductMapping.id).where(*conditions))
-        if exists is not None:
+        existing_mapping = self.db.scalar(select(ProductMapping).where(*conditions))
+        if existing_mapping is not None:
+            existing_mapping.conversion_multiplier = conversion_multiplier
             if seen is not None:
                 seen.update(mapping_keys)
             return False
@@ -372,6 +399,7 @@ class ImportService:
                 normalized_item_code=normalized_item_code,
                 raw_name=raw_name,
                 normalized_name=normalized_name,
+                conversion_multiplier=conversion_multiplier,
                 product_id=product.id,
                 is_active=True,
             )
@@ -400,9 +428,13 @@ class ImportService:
         client: Client,
         raw_client_name: str,
         address: str | None,
+        seen: set[tuple[str, str, int]] | None = None,
     ) -> bool:
         normalized_client_name = normalize_key(raw_client_name)
         normalized_address = normalize_key(address)
+        mapping_key = (converter_type, normalized_client_name, client.id)
+        if seen is not None and mapping_key in seen:
+            return False
         exists = self.db.scalar(
             select(ClientMapping.id).where(
                 ClientMapping.converter_type == converter_type,
@@ -412,6 +444,8 @@ class ImportService:
             )
         )
         if exists is not None:
+            if seen is not None:
+                seen.add(mapping_key)
             return False
         self.db.add(
             ClientMapping(
@@ -424,4 +458,6 @@ class ImportService:
                 is_active=True,
             )
         )
+        if seen is not None:
+            seen.add(mapping_key)
         return True

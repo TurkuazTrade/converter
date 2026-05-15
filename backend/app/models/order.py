@@ -57,6 +57,10 @@ class OrderItem(Base, TimestampMixin):
     normalized_name: Mapped[str | None] = mapped_column(String(512), index=True)
     raw_item_code: Mapped[str | None] = mapped_column(String(128), index=True)
     item_code: Mapped[str | None] = mapped_column(String(128), index=True)
+    source_quantity: Mapped[Decimal | None] = mapped_column(Numeric(14, 3))
+    conversion_multiplier: Mapped[Decimal] = mapped_column(
+        Numeric(14, 3), default=Decimal("1"), nullable=False
+    )
     quantity: Mapped[Decimal] = mapped_column(Numeric(14, 3), nullable=False)
     row_number: Mapped[int | None] = mapped_column()
     status: Mapped[str] = mapped_column(
