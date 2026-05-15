@@ -47,7 +47,7 @@ class MatchingService:
 
         client = None
         if normalized_name or normalized_address:
-            client = self.db.scalar(
+            client = self._single_client(
                 select(Client)
                 .join(ClientMapping, ClientMapping.client_id == Client.id)
                 .where(
@@ -63,15 +63,15 @@ class MatchingService:
                 )
             )
         if client is None and client_code:
-            client = self.db.scalar(
+            client = self._single_client(
                 select(Client).where(
-                    Client.client_code == client_code,
+                    (Client.client_code == client_code) | (Client.client_code_2 == client_code),
                     Client.deleted_at.is_(None),
                     Client.is_active.is_(True),
                 )
             )
         if client is None and normalized_name:
-            client = self.db.scalar(
+            client = self._single_client(
                 select(Client).where(
                     (
                         (Client.normalized_name == normalized_name)
@@ -84,6 +84,10 @@ class MatchingService:
         if client is not None:
             order.client_id = client.id
         return client
+
+    def _single_client(self, stmt) -> Client | None:
+        matches = list(self.db.scalars(stmt.limit(2)))
+        return matches[0] if len(matches) == 1 else None
 
     def match_item(self, converter_type: str, item: OrderItem) -> None:
         if item.status == OrderItemStatus.SKIPPED.value:

@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { downloadBlob, filenameFromContentDisposition } from '../shared/download';
 
@@ -45,6 +45,7 @@ export function OrderPreviewPage() {
   const [newClientName, setNewClientName] = useState('');
   const [multiplierDrafts, setMultiplierDrafts] = useState<Record<number, string>>({});
   const [actionError, setActionError] = useState('');
+  const autoResolvedClientId = useRef<number | null>(null);
   const { data, isLoading, error } = useQuery({
     queryKey: ['order-preview', orderId],
     queryFn: async () => (await api.get(`/orders/${orderId}/preview`)).data,
@@ -55,6 +56,7 @@ export function OrderPreviewPage() {
     queryFn: async () => (await api.get('/clients', { params: { search: clientSearch || data?.client_hint?.raw_name || '', limit: 20 } })).data,
     enabled: !data?.client && (clientSearch || data?.client_hint?.raw_name || '').length >= 2,
   });
+  const onlyClient = !data?.client && clients?.length === 1 ? clients[0] : null;
 
   useEffect(() => {
     if (!data?.client && data?.client_hint?.raw_name) {
@@ -62,6 +64,19 @@ export function OrderPreviewPage() {
       setNewClientName((value) => value || data.client_hint.raw_name);
     }
   }, [data?.client, data?.client_hint?.raw_name]);
+
+  useEffect(() => {
+    if (!onlyClient || autoResolvedClientId.current === onlyClient.id) return;
+
+    autoResolvedClientId.current = onlyClient.id;
+    setActionError('');
+    api.post(`/orders/${orderId}/resolve-client`, { client_id: onlyClient.id })
+      .then(() => queryClient.invalidateQueries({ queryKey: ['order-preview', orderId] }))
+      .catch((err: any) => {
+        autoResolvedClientId.current = null;
+        setActionError(err.response?.data?.detail ?? 'Не удалось автоматически выбрать клиента');
+      });
+  }, [onlyClient, orderId, queryClient]);
 
   async function downloadExport() {
     setActionError('');

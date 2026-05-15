@@ -61,7 +61,7 @@ class ExportService:
         order = db.get(Order, order_id)
         if order is None:
             raise ValueError("Order not found.")
-        payload = self._payload_from_order(order, sequence_number=self._next_export_sequence_number(db, order.id))
+        payload = self._payload_from_order(order, sequence_number=self._next_export_sequence_number(db))
         content = self.build_export_bytes(payload)
         filename = self.build_filename(payload)
         result = GeneratedExport(
@@ -113,7 +113,7 @@ class ExportService:
                 for col in clearable_columns:
                     worksheet.cell(row, col).value = None
 
-            for offset, line in enumerate(order.lines):
+            for offset, line in enumerate(self._sorted_lines(order.lines)):
                 row = start_row + offset
                 if template_row_height is not None:
                     worksheet.row_dimensions[row].height = template_row_height
@@ -210,14 +210,24 @@ class ExportService:
         )
 
     @staticmethod
-    def _next_export_sequence_number(db: Session, order_id: int) -> int:
+    def _next_export_sequence_number(db: Session) -> int:
         export_count = db.scalar(
             select(func.count(ProcessingEvent.id)).where(
-                ProcessingEvent.order_id == order_id,
                 ProcessingEvent.event_type == ProcessingEventType.EXPORTED.value,
             )
         )
         return int(export_count or 0) * 20
+
+    @staticmethod
+    def _sorted_lines(lines: list[ExportLine]) -> list[ExportLine]:
+        return sorted(lines, key=lambda line: ExportService._item_code_sort_key(line.item_code))
+
+    @staticmethod
+    def _item_code_sort_key(item_code: str) -> tuple[int, int | str, str]:
+        code = item_code.strip()
+        if code.isdigit():
+            return (0, int(code), code)
+        return (1, code.casefold(), code)
 
     @staticmethod
     def _filename_safe_text(value: str, fallback: str) -> str:

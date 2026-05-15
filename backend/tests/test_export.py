@@ -73,6 +73,32 @@ def test_export_matches_template_contract() -> None:
     template.close()
 
 
+def test_export_lines_are_sorted_by_item_code() -> None:
+    service = ExportService(template_path=TEMPLATE_PATH)
+    content = service.build_export_bytes(
+        ResolvedOrderExport(
+            converter_type="piton",
+            client_code="100245",
+            document_date=date(2026, 5, 14),
+            fiche_no="0000000001",
+            lines=[
+                ExportLine(item_code="203150105380107012200140", item_name="Third", quantity=1),
+                ExportLine(item_code="201082060195409891300035", item_name="First", quantity=1),
+                ExportLine(item_code="201122065180057605540020", item_name="Second", quantity=1),
+            ],
+        )
+    )
+
+    workbook = openpyxl.load_workbook(BytesIO(content), data_only=True)
+    sheet = workbook.active
+    assert [sheet[f"A{row}"].value for row in range(6, 9)] == [
+        "201082060195409891300035",
+        "201122065180057605540020",
+        "203150105380107012200140",
+    ]
+    workbook.close()
+
+
 def test_export_filename_is_operator_friendly() -> None:
     filename = ExportService().build_filename(
         ResolvedOrderExport(
@@ -149,6 +175,32 @@ def test_export_sequence_counts_existing_export_events(db_session: Session) -> N
     assert result.filename == "Piton zakaz 0020.xlsx"
     assert workbook.active["B4"].value == "KA0000000020"
     workbook.close()
+
+
+def test_export_sequence_is_global_across_orders(db_session: Session) -> None:
+    first_order = _resolved_order(
+        db_session,
+        product_item_code="ERP-FIRST",
+        client_code="100245-GLOBAL-1",
+    )
+    second_order = _resolved_order(
+        db_session,
+        product_item_code="ERP-SECOND",
+        client_code="100245-GLOBAL-2",
+    )
+    db_session.flush()
+
+    first = ExportService(template_path=TEMPLATE_PATH).export_order(db_session, first_order.id)
+    second = ExportService(template_path=TEMPLATE_PATH).export_order(db_session, second_order.id)
+
+    first_workbook = openpyxl.load_workbook(BytesIO(first.content), data_only=True)
+    second_workbook = openpyxl.load_workbook(BytesIO(second.content), data_only=True)
+    assert first.filename == "Piton zakaz 0000.xlsx"
+    assert second.filename == "Piton zakaz 0020.xlsx"
+    assert first_workbook.active["B4"].value == "KA0000000000"
+    assert second_workbook.active["B4"].value == "KA0000000020"
+    first_workbook.close()
+    second_workbook.close()
 
 
 def test_export_needs_review_order_with_resolved_rows(db_session: Session) -> None:
@@ -268,9 +320,10 @@ def _resolved_order(
     status: str = OrderStatus.READY_TO_EXPORT.value,
     product_item_code: str | None = "ERP-100",
     raw_barcode: str = "4600000000000",
+    client_code: str = "100245",
 ) -> Order:
     client = Client(
-        client_code="100245",
+        client_code=client_code,
         name="Resolved Client",
         normalized_name="resolvedclient",
         is_active=True,

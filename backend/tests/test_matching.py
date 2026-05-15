@@ -187,6 +187,57 @@ def test_matching_resolves_client_by_second_name(db_session: Session) -> None:
     assert order.client_id == client.id
 
 
+def test_matching_resolves_client_by_file_client_code_2(db_session: Session) -> None:
+    client = Client(
+        client_code="PANORAMA-001",
+        client_code_2="120-04-1-03-8812",
+        name="Азия Ритейл-12",
+        normalized_name="азияритейл12",
+        is_active=True,
+    )
+    order = Order(
+        converter_type="asia_retail",
+        status=OrderStatus.PROCESSING.value,
+        parsed_snapshot={"client_hint": {"raw_name": "Гипермаркет 12", "client_code": "120-04-1-03-8812"}},
+    )
+    db_session.add_all([client, order])
+    db_session.flush()
+
+    MatchingService(db_session).match_client(order)
+
+    assert order.client_id == client.id
+
+
+def test_matching_leaves_client_unresolved_when_name_matches_multiple_clients(
+    db_session: Session,
+) -> None:
+    first = Client(
+        client_code="CLIENT-1",
+        name="Азия Ритейл-1",
+        name_2="Гипермаркет",
+        normalized_name="азияритейл1",
+        is_active=True,
+    )
+    second = Client(
+        client_code="CLIENT-2",
+        name="Азия Ритейл-2",
+        name_2="Гипермаркет",
+        normalized_name="азияритейл2",
+        is_active=True,
+    )
+    order = Order(
+        converter_type="asia_retail",
+        status=OrderStatus.PROCESSING.value,
+        parsed_snapshot={"client_hint": {"raw_name": "Гипермаркет"}},
+    )
+    db_session.add_all([first, second, order])
+    db_session.flush()
+
+    MatchingService(db_session).match_client(order)
+
+    assert order.client_id is None
+
+
 def test_backfill_product_names_from_order_items(db_session: Session) -> None:
     product = _product(db_session, item_code="ERP-BACKFILL", name="")
     order, item = _order_with_item(db_session, barcode="555", raw_name="Rare Network Name")

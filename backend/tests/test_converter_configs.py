@@ -64,7 +64,7 @@ def test_asia_retail_one_c_export_format_parses(tmp_path) -> None:
             58,
             696,
             "203150105380107012200024",
-            "",
+            "120-04-1-03-8812",
         ]
     )
     path = tmp_path / "fr-12.xlsx"
@@ -75,6 +75,7 @@ def test_asia_retail_one_c_export_format_parses(tmp_path) -> None:
 
     assert parsed.document_no == "ЦБ00309246"
     assert parsed.client_hint.raw_name == "Гипермаркет 12"
+    assert parsed.client_hint.client_code == "120-04-1-03-8812"
     assert len(parsed.items) == 1
     assert parsed.items[0].raw_item_code == "203150105380107012200024"
     assert parsed.items[0].normalized_barcode == "8690529522897"
