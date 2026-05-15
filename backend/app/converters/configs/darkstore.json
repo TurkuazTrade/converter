@@ -1,0 +1,14 @@
+{
+  "type": "darkstore",
+  "version": "1.0.0",
+  "sheet": {"strategy": "first_matching", "name_aliases": ["Лист1"]},
+  "header": {"strategy": "aliases", "search_rows": 20, "required": ["barcode", "item_name", "quantity"]},
+  "columns": {
+    "item_code": ["ID", "Код"],
+    "item_name": ["Наименование", "Товар"],
+    "barcode": ["Штрих-код", "Штрихкод"],
+    "quantity": ["Заказ/шт", "Заказ шт", "Заказ"]
+  },
+  "metadata": {"client_text_prefix": "Заказ на"},
+  "filters": {"skip_zero_quantity": true}
+}

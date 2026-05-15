@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-slate-950 text-slate-100;
+}
+
+.page {
+  @apply mx-auto max-w-7xl px-6 py-6;
+}
+
+.panel {
+  @apply rounded-lg border border-slate-800 bg-slate-900 p-5;
+}
+
+.button {
+  @apply rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500;
+}
+
+.button-secondary {
+  @apply rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700;
+}
+
+.button-ghost {
+  @apply rounded-md px-3 py-2 text-sm text-slate-400 hover:bg-slate-800 hover:text-white;
+}
+
+.button:disabled,
+.button-secondary:disabled {
+  @apply cursor-not-allowed opacity-50;
+}
+
+.input {
+  @apply rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-blue-500;
+}
+
+.table {
+  @apply w-full border-collapse text-left text-sm;
+}
+
+.table th {
+  @apply border-b border-slate-700 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400;
+}
+
+.table td {
+  @apply border-b border-slate-800 px-3 py-2 align-top;
+}
+
+.status-pill {
+  @apply rounded-full border border-slate-700 bg-slate-950 px-3 py-1 text-xs text-slate-300;
+}
+
+.status-pill-ok {
+  @apply rounded-full border border-emerald-700 bg-emerald-950/40 px-3 py-1 text-xs text-emerald-200;
+}
+
+.status-pill-warn {
+  @apply rounded-full border border-amber-700 bg-amber-950/40 px-3 py-1 text-xs text-amber-200;
+}
+
+.status-pill-danger {
+  @apply rounded-full border border-red-700 bg-red-950/40 px-3 py-1 text-xs text-red-200;
+}

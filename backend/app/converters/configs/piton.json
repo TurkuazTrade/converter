@@ -1,0 +1,17 @@
+{
+  "type": "piton",
+  "version": "1.0.0",
+  "sheet": {"strategy": "first_matching", "name_aliases": ["Заявка"]},
+  "header": {"strategy": "aliases", "search_rows": 20, "required": ["barcode", "item_name", "quantity"]},
+  "columns": {
+    "document_no": ["Номер"],
+    "document_date": ["Дата"],
+    "client_name": ["Контрагент"],
+    "client_branch": ["Подразделение"],
+    "item_code": ["Код товара", "Номер товара"],
+    "item_name": ["Товар", "Наименование"],
+    "barcode": ["Штрихкод", "Штрих-код", "BARCODE"],
+    "quantity": ["Количество", "Кол-во"]
+  },
+  "filters": {"skip_zero_quantity": true, "skip_empty_barcode": false}
+}

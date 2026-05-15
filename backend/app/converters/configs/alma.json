@@ -1,0 +1,14 @@
+{
+  "type": "alma",
+  "version": "1.0.0",
+  "sheet": {"strategy": "first_matching", "name_aliases": ["TDSheet"]},
+  "header": {"strategy": "aliases", "search_rows": 20, "required": ["barcode", "item_name"]},
+  "columns": {
+    "item_code": ["Код"],
+    "item_name": ["Номенклатура", "Наименование"],
+    "barcode": ["Основной штрихкод", "Штрихкод", "Штрих-код"],
+    "quantity": {"fallback_index": 3}
+  },
+  "metadata": {"client_row_prefix": "Склад"},
+  "filters": {"skip_zero_quantity": true}
+}

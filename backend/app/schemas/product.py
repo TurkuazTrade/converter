@@ -1,0 +1,23 @@
+from __future__ import annotations
+
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict
+
+
+class ProductRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    item_code: str | None
+    name: str
+    price_code: str | None
+    is_active: bool
+    created_at: datetime
+
+
+class ProductUpdate(BaseModel):
+    item_code: str | None = None
+    name: str | None = None
+    price_code: str | None = None
+    is_active: bool | None = None

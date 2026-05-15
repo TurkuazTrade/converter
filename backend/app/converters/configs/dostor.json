@@ -1,0 +1,13 @@
+{
+  "type": "dostor",
+  "version": "1.0.0",
+  "extends": "narodnyi",
+  "sheet": {"strategy": "first_matching", "name_aliases": ["Order", "TDSheet"]},
+  "columns": {
+    "item_code": ["Код"],
+    "item_name": ["Продукция"],
+    "barcode": ["Штрихкод"],
+    "quantity": ["Заказ"]
+  },
+  "metadata": {"client_cell_candidates": ["B5"]}
+}

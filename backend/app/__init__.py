@@ -1,0 +1,1 @@
+"""Bishkek CRM backend package."""
