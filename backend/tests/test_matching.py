@@ -25,6 +25,45 @@ def test_matching_resolves_product_by_barcode(db_session: Session) -> None:
     assert item.status == OrderItemStatus.RESOLVED.value
 
 
+def test_matching_ignores_smoke_barcode_and_uses_item_code(db_session: Session) -> None:
+    smoke_product = _product(db_session, item_code="TEST-PRODUCT-001", name="Test product")
+    db_session.add(
+        ProductBarcode(
+            product_id=smoke_product.id,
+            barcode="8690529502011",
+            source="smoke",
+            is_primary=True,
+            is_active=True,
+        )
+    )
+    real_product = _product(db_session, item_code="203150105380107012200040", name="")
+    order, item = _order_with_item(db_session, barcode="8690529502011", raw_name="Real source name")
+    item.raw_item_code = real_product.item_code
+    db_session.flush()
+
+    MatchingService(db_session).match_order(order.id)
+
+    assert item.product_id == real_product.id
+    assert item.item_code == "203150105380107012200040"
+    assert item.status == OrderItemStatus.RESOLVED.value
+    assert real_product.name == "Real source name"
+
+
+def test_asia_retail_short_numeric_item_code_is_skipped_on_rematch(db_session: Session) -> None:
+    product = _product(db_session, item_code="ERP-SHOULD-NOT-MATCH", barcode="4607176441079")
+    order, item = _order_with_item(db_session, barcode="4607176441079", raw_name="Short code row")
+    order.converter_type = "asia_retail"
+    item.raw_item_code = "201"
+    db_session.flush()
+
+    MatchingService(db_session).match_order(order.id)
+
+    assert item.product_id is None
+    assert item.item_code == "201"
+    assert item.status == OrderItemStatus.SKIPPED.value
+    assert product.id is not None
+
+
 def test_matching_resolves_product_by_saved_mapping(db_session: Session) -> None:
     product = _product(db_session, item_code="ERP-2")
     order, item = _order_with_item(db_session, barcode="9999999999999")
@@ -125,6 +164,27 @@ def test_matching_does_not_overwrite_existing_product_name(db_session: Session) 
 
     assert item.product_id == product.id
     assert product.name == "Catalog Product"
+
+
+def test_matching_resolves_client_by_second_name(db_session: Session) -> None:
+    client = Client(
+        client_code="120-04-1-03-8812",
+        name="Азия Ритейл-12",
+        name_2="Гипермаркет 12",
+        normalized_name="азияритейл12",
+        is_active=True,
+    )
+    order = Order(
+        converter_type="asia_retail",
+        status=OrderStatus.PROCESSING.value,
+        parsed_snapshot={"client_hint": {"raw_name": "Гипермаркет 12"}},
+    )
+    db_session.add_all([client, order])
+    db_session.flush()
+
+    MatchingService(db_session).match_client(order)
+
+    assert order.client_id == client.id
 
 
 def test_backfill_product_names_from_order_items(db_session: Session) -> None:

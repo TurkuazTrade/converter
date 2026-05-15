@@ -176,6 +176,8 @@ async def test_import_clients_reads_piton_client_sheet_and_mapping(db_session: S
 
     client = db_session.scalar(select(Client).where(Client.client_code == "120-04-01-04-8811"))
     assert client is not None
+    assert client.name == "Азия Ритейл-1"
+    assert client.name_2 == "Гипермаркет 01"
     assert result["converter_type"] == "piton"
     assert result["inserted"] == 1
     assert result["mappings_inserted"] == 1
@@ -218,6 +220,28 @@ async def test_import_clients_skips_duplicate_client_codes_in_same_file(db_sessi
     assert result["mappings_inserted"] == 1
     assert len(clients) == 1
     assert len(mappings) == 1
+
+
+@pytest.mark.asyncio
+async def test_import_clients_reads_explicit_second_name(db_session: Session) -> None:
+    upload = _upload_workbook(
+        "CLIENTS.xlsx",
+        {
+            "clients": [
+                ["Client Code", "Client Name", "Client Name 2"],
+                ["C-001", "Название 1", "Название 2"],
+            ]
+        },
+    )
+
+    result = await ImportService(db_session).import_clients(upload, converter_type="piton")
+    db_session.flush()
+
+    client = db_session.scalar(select(Client).where(Client.client_code == "C-001"))
+    assert client is not None
+    assert result["inserted"] == 1
+    assert client.name == "Название 1"
+    assert client.name_2 == "Название 2"
 
 
 @pytest.mark.asyncio

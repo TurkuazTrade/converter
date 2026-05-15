@@ -9,6 +9,7 @@ from io import BytesIO
 from pathlib import Path
 
 import openpyxl
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -35,7 +36,7 @@ class ResolvedOrderExport:
     document_date: date
     fiche_no: str
     lines: list[ExportLine]
-    sequence_number: int = 1
+    sequence_number: int = 0
 
 
 @dataclass(slots=True)
@@ -60,7 +61,7 @@ class ExportService:
         order = db.get(Order, order_id)
         if order is None:
             raise ValueError("Order not found.")
-        payload = self._payload_from_order(order)
+        payload = self._payload_from_order(order, sequence_number=self._next_export_sequence_number(db, order.id))
         content = self.build_export_bytes(payload)
         filename = self.build_filename(payload)
         result = GeneratedExport(
@@ -140,8 +141,8 @@ class ExportService:
             self._filename_converter_prefix(order.converter_type),
             "Converter",
         )
-        sequence = max(order.sequence_number, 1)
-        return f"{converter} zakaz {sequence:02d}.xlsx"
+        sequence = max(order.sequence_number, 0)
+        return f"{converter} zakaz {sequence:04d}.xlsx"
 
     @staticmethod
     def _filename_converter_prefix(converter_type: str) -> str:
@@ -158,7 +159,7 @@ class ExportService:
         workbook = openpyxl.load_workbook(BytesIO(content), read_only=True, data_only=True)
         workbook.close()
 
-    def _payload_from_order(self, order: Order) -> ResolvedOrderExport:
+    def _payload_from_order(self, order: Order, *, sequence_number: int | None = None) -> ResolvedOrderExport:
         allowed_statuses = {
             OrderStatus.NEEDS_REVIEW.value,
             OrderStatus.READY_TO_EXPORT.value,
@@ -198,14 +199,25 @@ class ExportService:
         if not lines:
             raise ValueError("Order has no exportable rows. Resolve or keep at least one product before export.")
 
+        sequence = max(sequence_number if sequence_number is not None else order.id * 20, 0)
         return ResolvedOrderExport(
             converter_type=order.converter_type or "unknown",
             client_code=client_code,
             document_date=document_date,
-            fiche_no=f"KA{order.id:010d}",
+            fiche_no=f"KA{sequence:010d}",
             lines=lines,
-            sequence_number=order.id,
+            sequence_number=sequence,
         )
+
+    @staticmethod
+    def _next_export_sequence_number(db: Session, order_id: int) -> int:
+        export_count = db.scalar(
+            select(func.count(ProcessingEvent.id)).where(
+                ProcessingEvent.order_id == order_id,
+                ProcessingEvent.event_type == ProcessingEventType.EXPORTED.value,
+            )
+        )
+        return int(export_count or 0) * 20
 
     @staticmethod
     def _filename_safe_text(value: str, fallback: str) -> str:

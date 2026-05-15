@@ -149,6 +149,7 @@ class ImportService:
             client_code_2 = normalize_item_code(row.get("client_code_2"))
             name = normalize_text(row.get("name"))
             raw_client_name = normalize_text(row.get("raw_client_name"))
+            name_2 = self._secondary_client_name(name, row.get("name_2"), raw_client_name)
             address = normalize_text(row.get("address")) or None
             network_name = normalize_text(row.get("network_name")) or detected_converter or None
             if not name and not client_code:
@@ -165,6 +166,7 @@ class ImportService:
                     client_code=client_code,
                     client_code_2=client_code_2,
                     name=name or client_code or "Unknown client",
+                    name_2=name_2,
                     normalized_name=normalize_key(name or client_code),
                     address=address,
                     normalized_address=normalize_key(address),
@@ -178,6 +180,7 @@ class ImportService:
                 client.client_code = client.client_code or client_code
                 client.client_code_2 = client_code_2 or client.client_code_2
                 client.name = name or client.name
+                client.name_2 = name_2 or client.name_2
                 client.normalized_name = normalize_key(client.name)
                 client.address = address or client.address
                 client.normalized_address = normalize_key(client.address)
@@ -279,6 +282,19 @@ class ImportService:
             "client_code": {"кодклиентапанорама", "кодклиента", "clientcode", "код"},
             "client_code_2": {"кодклиента2", "clientcode2"},
             "raw_client_name": {"названиеклиентапитон", "rawclientname", "networkclientname"},
+            "name_2": {
+                "название2",
+                "название_2",
+                "названиеклиента2",
+                "названиеклиентапитон",
+                "clientname2",
+                "clientname_2",
+                "name2",
+                "name_2",
+                "secondname",
+                "secondaryname",
+                "alternatename",
+            },
             "address": {"адрес", "address", "адресклиента"},
             "network_name": {"сеть", "network", "networkname", "названиесети"},
         }
@@ -298,7 +314,9 @@ class ImportService:
                 return mapping
             return None
         if kind == "clients":
-            if "client_code" in mapping and ("name" in mapping or "raw_client_name" in mapping):
+            if "client_code" in mapping and (
+                "name" in mapping or "name_2" in mapping or "raw_client_name" in mapping
+            ):
                 return mapping
             return None
         if "name" in mapping and (("barcode" in mapping) or ("client_code" in mapping) or ("item_code" in mapping)):
@@ -339,6 +357,15 @@ class ImportService:
         }
         return "" if name_key in technical_keys else name
 
+    @staticmethod
+    def _secondary_client_name(primary_name: str, *values: Any) -> str | None:
+        primary_key = normalize_key(primary_name)
+        for value in values:
+            name = normalize_text(value)
+            if name and normalize_key(name) != primary_key:
+                return name
+        return None
+
     def _detect_converter_type(self, filename: str) -> str | None:
         detected = self.registry.detect_converter(filename)
         return detected.value if detected else None
@@ -350,6 +377,7 @@ class ImportService:
                 .join(ProductBarcode, ProductBarcode.product_id == Product.id)
                 .where(
                     ProductBarcode.barcode == barcode,
+                    self._trusted_barcode_condition(),
                     ProductBarcode.deleted_at.is_(None),
                     ProductBarcode.is_active.is_(True),
                     Product.deleted_at.is_(None),
@@ -451,6 +479,10 @@ class ImportService:
                 select(Client).where(Client.normalized_name == normalize_key(name), Client.deleted_at.is_(None))
             )
         return None
+
+    @staticmethod
+    def _trusted_barcode_condition():
+        return or_(ProductBarcode.source.is_(None), ProductBarcode.source != "smoke")
 
     def _save_client_mapping(
         self,

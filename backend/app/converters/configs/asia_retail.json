@@ -1,14 +1,17 @@
 {
   "type": "asia_retail",
   "version": "1.0.0",
-  "sheet": {"strategy": "first_matching", "name_aliases": ["Order"]},
+  "sheet": {"strategy": "first_matching", "name_aliases": ["Order", "Заявка"]},
   "header": {"strategy": "aliases", "search_rows": 20, "required": ["barcode", "item_name", "quantity"]},
   "columns": {
-    "item_code": ["Код", "Код товара"],
+    "document_no": ["Номер"],
+    "document_date": ["Дата"],
+    "client_branch": ["Подразделение"],
+    "item_code": ["Номер товара", "Код товара", "Код"],
     "item_name": ["Продукция", "Товар", "Наименование"],
     "barcode": ["Штрихкод", "Штрих-код"],
-    "quantity": ["Заказ"]
+    "quantity": ["Заказ", "Количество", "Кол-во"]
   },
   "metadata": {"client_text_prefix": "Покупатель:"},
-  "filters": {"skip_zero_quantity": true}
+  "filters": {"skip_zero_quantity": true, "skip_short_numeric_item_codes": true}
 }

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.enums import OrderItemStatus, OrderStatus
 from app.models.client import Client
-from app.models.order import Order, OrderItem
+from app.models.order import Order, OrderItem, ProcessingEvent
 from app.models.product import Product
 from app.services.export_service import ExportLine, ExportService, ResolvedOrderExport
 
@@ -81,11 +81,11 @@ def test_export_filename_is_operator_friendly() -> None:
             document_date=date(2026, 5, 14),
             fiche_no="0000000001",
             lines=[],
-            sequence_number=2,
+            sequence_number=20,
         )
     )
 
-    assert filename == "AsiaRetail zakaz 02.xlsx"
+    assert filename == "AsiaRetail zakaz 0020.xlsx"
 
 
 def test_export_order_uses_resolved_product_and_client(db_session: Session) -> None:
@@ -101,7 +101,7 @@ def test_export_order_uses_resolved_product_and_client(db_session: Session) -> N
     sheet = workbook.active
     assert sheet["B1"].value == "100245"
     assert _cell_date(sheet["B2"].value) == date.today()
-    assert sheet["B4"].value == "KA0000000001"
+    assert sheet["B4"].value == "KA0000000000"
     assert sheet["A6"].value == "ERP-100"
     assert sheet["A6"].value != "9999999999999"
     assert sheet["B6"].value == "Resolved Product"
@@ -109,7 +109,45 @@ def test_export_order_uses_resolved_product_and_client(db_session: Session) -> N
     assert sheet["D6"].value == 4
     assert order.status == OrderStatus.EXPORTED.value
     assert order.export_file_id is None
-    assert result.filename == "Piton zakaz 01.xlsx"
+    assert result.filename == "Piton zakaz 0000.xlsx"
+    workbook.close()
+
+
+def test_repeated_export_uses_twenty_step_sequence(db_session: Session) -> None:
+    order = _resolved_order(db_session)
+    db_session.flush()
+
+    first = ExportService(template_path=TEMPLATE_PATH).export_order(db_session, order.id)
+    second = ExportService(template_path=TEMPLATE_PATH).export_order(db_session, order.id)
+
+    first_workbook = openpyxl.load_workbook(BytesIO(first.content), data_only=True)
+    second_workbook = openpyxl.load_workbook(BytesIO(second.content), data_only=True)
+    assert first.filename == "Piton zakaz 0000.xlsx"
+    assert second.filename == "Piton zakaz 0020.xlsx"
+    assert first_workbook.active["B4"].value == "KA0000000000"
+    assert second_workbook.active["B4"].value == "KA0000000020"
+    first_workbook.close()
+    second_workbook.close()
+
+
+def test_export_sequence_counts_existing_export_events(db_session: Session) -> None:
+    order = _resolved_order(db_session)
+    db_session.flush()
+    db_session.add(
+        ProcessingEvent(
+            order_id=order.id,
+            event_type="exported",
+            message="Existing export.",
+            payload={},
+        )
+    )
+    db_session.flush()
+
+    result = ExportService(template_path=TEMPLATE_PATH).export_order(db_session, order.id)
+
+    workbook = openpyxl.load_workbook(BytesIO(result.content), data_only=True)
+    assert result.filename == "Piton zakaz 0020.xlsx"
+    assert workbook.active["B4"].value == "KA0000000020"
     workbook.close()
 
 

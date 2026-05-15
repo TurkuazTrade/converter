@@ -4,7 +4,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.enums import OrderItemStatus
@@ -12,7 +12,7 @@ from app.models.client import Client
 from app.models.mapping import ClientMapping, ProductMapping
 from app.models.order import Order, OrderItem
 from app.models.product import Product, ProductBarcode
-from app.utils.normalization import normalize_key, normalize_text
+from app.utils.normalization import is_short_numeric_item_code, normalize_key, normalize_text
 
 
 @dataclass(frozen=True)
@@ -73,7 +73,10 @@ class MatchingService:
         if client is None and normalized_name:
             client = self.db.scalar(
                 select(Client).where(
-                    Client.normalized_name == normalized_name,
+                    (
+                        (Client.normalized_name == normalized_name)
+                        | (Client.name_2 == raw_name)
+                    ),
                     Client.deleted_at.is_(None),
                     Client.is_active.is_(True),
                 )
@@ -84,6 +87,15 @@ class MatchingService:
 
     def match_item(self, converter_type: str, item: OrderItem) -> None:
         if item.status == OrderItemStatus.SKIPPED.value:
+            return
+
+        if converter_type == "asia_retail" and is_short_numeric_item_code(item.raw_item_code):
+            item.product_id = None
+            item.item_code = item.raw_item_code or item.normalized_barcode
+            item.conversion_multiplier = Decimal("1")
+            item.quantity = self._source_quantity(item)
+            item.status = OrderItemStatus.SKIPPED.value
+            item.error_message = "Skipped because item code is 2-4 digits."
             return
 
         source_quantity = self._source_quantity(item)
@@ -169,6 +181,7 @@ class MatchingService:
                 .join(ProductBarcode, ProductBarcode.product_id == Product.id)
                 .where(
                     ProductBarcode.barcode == item.normalized_barcode,
+                    self._trusted_barcode_condition(),
                     ProductBarcode.is_active.is_(True),
                     ProductBarcode.deleted_at.is_(None),
                     Product.deleted_at.is_(None),
@@ -357,6 +370,10 @@ class MatchingService:
             normalize_key(item.normalized_barcode),
         }
         return None if name_key in technical_keys else name
+
+    @staticmethod
+    def _trusted_barcode_condition():
+        return or_(ProductBarcode.source.is_(None), ProductBarcode.source != "smoke")
 
     def save_client_mapping(self, order_id: int, client_id: int, user_id: int) -> None:
         order = self.db.get(Order, order_id)

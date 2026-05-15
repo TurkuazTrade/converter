@@ -10,6 +10,7 @@ from typing import Any
 from app.converters.base import BaseConverter, ParsedClientHint, ParsedItem, ParsedOrder
 from app.utils.excel_reader import SheetData, read_workbook
 from app.utils.normalization import (
+    is_short_numeric_item_code,
     normalize_barcode,
     normalize_item_code,
     normalize_key,
@@ -122,10 +123,13 @@ class ConfigDrivenConverter(BaseConverter):
                 if isinstance(fallback_index, int):
                     result[semantic_name] = fallback_index
                 continue
-            alias_keys = {normalize_key(alias) for alias in aliases}
-            for index, cell_key in enumerate(normalized_cells):
-                if cell_key and cell_key in alias_keys:
-                    result[semantic_name] = index
+            for alias in aliases:
+                alias_key = normalize_key(alias)
+                for index, cell_key in enumerate(normalized_cells):
+                    if cell_key and cell_key == alias_key:
+                        result[semantic_name] = index
+                        break
+                if semantic_name in result:
                     break
         return result
 
@@ -261,7 +265,9 @@ class ConfigDrivenConverter(BaseConverter):
 
     def _parse_items(self, match: HeaderMatch) -> list[ParsedItem]:
         items: list[ParsedItem] = []
-        skip_zero = bool(self.config.get("filters", {}).get("skip_zero_quantity", True))
+        filters = self.config.get("filters", {})
+        skip_zero = bool(filters.get("skip_zero_quantity", True))
+        skip_short_numeric_item_codes = bool(filters.get("skip_short_numeric_item_codes", False))
         for row_index, row in match.sheet.visible_rows():
             if row_index <= match.header_row:
                 continue
@@ -272,6 +278,8 @@ class ConfigDrivenConverter(BaseConverter):
 
             raw_quantity = self._cell(row, match.columns.get("quantity"))
             if not any((item_code, barcode, item_name, raw_quantity not in (None, ""))):
+                continue
+            if skip_short_numeric_item_codes and is_short_numeric_item_code(item_code):
                 continue
             if quantity is None:
                 if raw_quantity in (None, ""):

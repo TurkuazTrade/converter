@@ -13,6 +13,8 @@ from app.repositories.orders import OrderRepository
 from app.services.converter_registry_service import ConverterRegistryService
 from app.services.matching_service import MatchingService
 from app.services.storage_service import LocalStorageService, StoredObject
+from app.utils.excel_reader import read_workbook
+from app.utils.normalization import normalize_text
 
 
 class OrderProcessingService:
@@ -35,7 +37,7 @@ class OrderProcessingService:
     ) -> tuple[Order | None, bool, int | None, str]:
         stored = await self.storage.save_source(upload_file, user_id=user_id)
         existing = OrderRepository(self.db).find_by_source_hash(stored.sha256)
-        if existing and not force:
+        if existing and not force and self._should_reuse_duplicate(existing, converter_type):
             self._discard_source_if_needed(stored)
             self._event(
                 existing.id,
@@ -218,11 +220,56 @@ class OrderProcessingService:
 
     def _detect_converter(self, stored: StoredObject) -> str:
         detected = self.registry.detect_converter(stored.original_name)
-        return detected.value if detected else self._detect_converter_from_name(stored.original_name)
+        if detected is not None:
+            return detected.value
+        preview_text = self._preview_text(Path(stored.path))
+        detected = self.registry.detect_converter(stored.original_name, preview_text=preview_text)
+        if detected is not None:
+            return detected.value
+        return self._detect_converter_from_content(Path(stored.path)) or self._detect_converter_from_name(
+            stored.original_name
+        )
 
     def _detect_converter_from_name(self, filename: str) -> str:
         detected = self.registry.detect_converter(filename)
         return detected.value if detected else "narodnyi"
+
+    def _detect_converter_from_content(self, path: Path) -> str | None:
+        valid: list[str] = []
+        for config in self.registry.list_configs():
+            converter_type = str(config["type"])
+            try:
+                self.registry.get_converter(converter_type).validate(path)
+            except Exception:
+                continue
+            valid.append(converter_type)
+        return valid[0] if len(valid) == 1 else None
+
+    @staticmethod
+    def _preview_text(path: Path, max_rows: int = 12) -> str:
+        try:
+            sheets = read_workbook(path, data_only=True)
+        except Exception:
+            return ""
+        parts: list[str] = []
+        for sheet in sheets:
+            parts.append(sheet.name)
+            for row_index, row in sheet.visible_rows():
+                if row_index > max_rows:
+                    break
+                for value in row:
+                    text = normalize_text(value)
+                    if text:
+                        parts.append(text)
+        return " ".join(parts)
+
+    @staticmethod
+    def _should_reuse_duplicate(existing: Order, requested_converter_type: str | None) -> bool:
+        if existing.status == OrderStatus.FAILED.value:
+            return False
+        if requested_converter_type and existing.converter_type != requested_converter_type:
+            return False
+        return True
 
     def _persist_file(self, stored: StoredObject, user_id: int | None) -> File:
         file_row = File(

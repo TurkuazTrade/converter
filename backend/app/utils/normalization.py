@@ -47,6 +47,13 @@ def normalize_item_code(value: Any) -> str | None:
     return text.strip() or None
 
 
+def is_short_numeric_item_code(value: Any, *, min_digits: int = 2, max_digits: int = 4) -> bool:
+    item_code = normalize_item_code(value)
+    if not item_code:
+        return False
+    return re.fullmatch(rf"\d{{{min_digits},{max_digits}}}", item_code) is not None
+
+
 def parse_decimal(value: Any) -> Decimal | None:
     if value is None or value == "":
         return None
