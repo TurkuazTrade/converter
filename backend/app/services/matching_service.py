@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from decimal import Decimal
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -9,6 +12,12 @@ from app.models.mapping import ClientMapping, ProductMapping
 from app.models.order import Order, OrderItem
 from app.models.product import Product, ProductBarcode
 from app.utils.normalization import normalize_key
+
+
+@dataclass(frozen=True)
+class ProductMatch:
+    product: Product
+    conversion_multiplier: Decimal
 
 
 class MatchingService:
@@ -73,15 +82,19 @@ class MatchingService:
         return client
 
     def match_item(self, converter_type: str, item: OrderItem) -> None:
-        if item.quantity <= 0:
+        source_quantity = self._source_quantity(item)
+        if source_quantity <= 0:
             item.status = OrderItemStatus.INVALID_QUANTITY.value
             item.error_message = "Quantity must be greater than zero."
             return
 
-        product = self._find_product(converter_type, item)
-        if product is not None:
-            item.product_id = product.id
-            item.item_code = product.item_code or item.raw_item_code or item.normalized_barcode
+        match = self._find_product_match(converter_type, item)
+        if match is not None:
+            item.product_id = match.product.id
+            item.item_code = match.product.item_code or item.raw_item_code or item.normalized_barcode
+            item.source_quantity = source_quantity
+            item.conversion_multiplier = match.conversion_multiplier
+            item.quantity = source_quantity * match.conversion_multiplier
             item.status = OrderItemStatus.RESOLVED.value
             item.error_message = None
             return
@@ -92,11 +105,19 @@ class MatchingService:
             f"item_code={item.raw_item_code or '-'}."
         )
 
-    def _find_product(self, converter_type: str, item: OrderItem) -> Product | None:
+    @staticmethod
+    def _source_quantity(item: OrderItem) -> Decimal:
+        return item.source_quantity if item.source_quantity is not None else item.quantity
+
+    @staticmethod
+    def _multiplier(value: Decimal | None) -> Decimal:
+        return value if value is not None and value > 0 else Decimal("1")
+
+    def _find_product_match(self, converter_type: str, item: OrderItem) -> ProductMatch | None:
         if item.normalized_barcode:
             mapped = self.db.scalar(
-                select(Product)
-                .join(ProductMapping, ProductMapping.product_id == Product.id)
+                select(ProductMapping)
+                .join(Product, ProductMapping.product_id == Product.id)
                 .where(
                     ProductMapping.converter_type == converter_type,
                     ProductMapping.normalized_barcode == item.normalized_barcode,
@@ -107,7 +128,10 @@ class MatchingService:
                 )
             )
             if mapped is not None:
-                return mapped
+                return ProductMatch(
+                    product=mapped.product,
+                    conversion_multiplier=self._multiplier(mapped.conversion_multiplier),
+                )
 
             by_barcode = self.db.scalar(
                 select(Product)
@@ -121,12 +145,12 @@ class MatchingService:
                 )
             )
             if by_barcode is not None:
-                return by_barcode
+                return ProductMatch(product=by_barcode, conversion_multiplier=Decimal("1"))
 
         if item.raw_item_code:
             mapped_by_item_code = self.db.scalar(
-                select(Product)
-                .join(ProductMapping, ProductMapping.product_id == Product.id)
+                select(ProductMapping)
+                .join(Product, ProductMapping.product_id == Product.id)
                 .where(
                     ProductMapping.converter_type == converter_type,
                     ProductMapping.normalized_item_code == normalize_key(item.raw_item_code),
@@ -137,7 +161,10 @@ class MatchingService:
                 )
             )
             if mapped_by_item_code is not None:
-                return mapped_by_item_code
+                return ProductMatch(
+                    product=mapped_by_item_code.product,
+                    conversion_multiplier=self._multiplier(mapped_by_item_code.conversion_multiplier),
+                )
 
             by_code = self.db.scalar(
                 select(Product).where(
@@ -147,12 +174,12 @@ class MatchingService:
                 )
             )
             if by_code is not None:
-                return by_code
+                return ProductMatch(product=by_code, conversion_multiplier=Decimal("1"))
 
         if item.normalized_name:
             mapped_by_name = self.db.scalar(
-                select(Product)
-                .join(ProductMapping, ProductMapping.product_id == Product.id)
+                select(ProductMapping)
+                .join(Product, ProductMapping.product_id == Product.id)
                 .where(
                     ProductMapping.converter_type == converter_type,
                     ProductMapping.normalized_name == item.normalized_name,
@@ -163,7 +190,10 @@ class MatchingService:
                 )
             )
             if mapped_by_name is not None:
-                return mapped_by_name
+                return ProductMatch(
+                    product=mapped_by_name.product,
+                    conversion_multiplier=self._multiplier(mapped_by_name.conversion_multiplier),
+                )
 
         return None
 
@@ -181,12 +211,16 @@ class MatchingService:
             normalized_item_code=normalize_key(item.raw_item_code),
             raw_name=item.raw_name,
             normalized_name=item.normalized_name,
+            conversion_multiplier=item.conversion_multiplier or Decimal("1"),
             product_id=product.id,
             created_by_id=user_id,
         )
         self.db.add(mapping)
         item.product_id = product.id
         item.item_code = product.item_code or item.raw_item_code or item.normalized_barcode
+        item.source_quantity = self._source_quantity(item)
+        item.conversion_multiplier = self._multiplier(item.conversion_multiplier)
+        item.quantity = item.source_quantity * item.conversion_multiplier
         item.status = OrderItemStatus.RESOLVED.value
         item.error_message = None
 
