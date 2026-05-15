@@ -9,6 +9,7 @@ type Order = {
   id: number;
   order_number: string | null;
   converter_type: string | null;
+  client_id: number | null;
   status: string;
   created_at: string;
   export_file_id?: number | null;
@@ -98,7 +99,7 @@ export function OrdersHistoryPage() {
                     <Link className="text-blue-300 hover:text-blue-200" to={`/orders/${order.id}/preview`}>
                       Открыть
                     </Link>
-                    {(order.status === 'ready_to_export' || order.status === 'exported') && (
+                    {(order.status === 'ready_to_export' || order.status === 'exported' || (order.status === 'needs_review' && order.client_id)) && (
                       <button type="button" className="text-emerald-300 hover:text-emerald-200" onClick={() => downloadExport(order.id)}>
                         Excel
                       </button>

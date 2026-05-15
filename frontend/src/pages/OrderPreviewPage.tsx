@@ -109,12 +109,14 @@ export function OrderPreviewPage() {
 
   const order = data.order;
   const items = data.items as PreviewItem[];
-  const unresolved = items.filter((item) => item.status !== 'resolved' || !item.product_id).length;
+  const unresolved = items.filter((item) => item.status !== 'resolved' && item.status !== 'skipped').length;
+  const exportable = items.filter((item) => item.status === 'resolved' && item.product_id).length;
+  const skipped = items.filter((item) => item.status === 'skipped').length;
   const clientResolved = Boolean(data.client);
   const readyToExport = order.status === 'ready_to_export';
   const exported = order.status === 'exported';
-  const downloadable = readyToExport || exported;
   const failed = order.status === 'failed';
+  const downloadable = clientResolved && exportable > 0 && !failed;
   const clientOptions = clients ?? [];
 
   return (
@@ -130,6 +132,7 @@ export function OrderPreviewPage() {
               </span>
               <span className="status-pill">{items.length} строк</span>
               {unresolved > 0 && <span className="status-pill-warn">{unresolved} не сопоставлено</span>}
+              {skipped > 0 && <span className="status-pill">{skipped} пропущено</span>}
             </div>
             <p className="mt-3 text-sm text-slate-400">
               Клиент: {clientResolved ? `${data.client.client_code} · ${data.client.name}` : data.client_hint?.raw_name || 'не определен'}
@@ -138,7 +141,7 @@ export function OrderPreviewPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             {unresolved > 0 && <Link className="button" to={`/orders/${order.id}/unresolved`}>Сопоставить товары</Link>}
-            {downloadable && unresolved === 0 && clientResolved && <button type="button" className="button" onClick={downloadExport}>Скачать Excel</button>}
+            {downloadable && <button type="button" className="button" onClick={downloadExport}>Скачать Excel</button>}
           </div>
         </div>
         {data.warnings?.length > 0 && (

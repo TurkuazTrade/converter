@@ -85,6 +85,18 @@ def test_matching_keeps_unknown_barcode_unresolved(db_session: Session) -> None:
     assert "Product not found" in (item.error_message or "")
 
 
+def test_skip_item_survives_rematch(db_session: Session) -> None:
+    order, item = _order_with_item(db_session, barcode="404")
+
+    service = MatchingService(db_session)
+    service.skip_item(item.id)
+    service.match_order(order.id)
+
+    assert item.product_id is None
+    assert item.status == OrderItemStatus.SKIPPED.value
+    assert item.error_message == "Skipped by operator."
+
+
 def test_matching_does_not_auto_assign_by_similar_name(db_session: Session) -> None:
     _product(db_session, item_code="ERP-3", name="Very Similar Product")
     order, item = _order_with_item(db_session, barcode=None, raw_name="Very Similar Product")

@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from copy import copy
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
@@ -135,10 +135,8 @@ class ExportService:
         return content
 
     def build_filename(self, order: ResolvedOrderExport) -> str:
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         converter = sanitize_filename_part(self._filename_converter_prefix(order.converter_type), "Converter")
-        client_code = sanitize_filename_part(order.client_code, "unknown_client")
-        return f"{converter}_zakaz_{client_code}_{timestamp}.xlsx"
+        return f"{converter} zakaz 01.xlsx"
 
     @staticmethod
     def _filename_converter_prefix(converter_type: str) -> str:
@@ -156,10 +154,15 @@ class ExportService:
         workbook.close()
 
     def _payload_from_order(self, order: Order) -> ResolvedOrderExport:
-        allowed_statuses = {OrderStatus.READY_TO_EXPORT.value, OrderStatus.EXPORTED.value}
+        allowed_statuses = {
+            OrderStatus.NEEDS_REVIEW.value,
+            OrderStatus.READY_TO_EXPORT.value,
+            OrderStatus.EXPORTED.value,
+        }
         if order.status not in allowed_statuses:
             raise ValueError(
-                f"Order is not ready to export: status must be {OrderStatus.READY_TO_EXPORT.value}, "
+                f"Order is not ready to export: status must be {OrderStatus.READY_TO_EXPORT.value} "
+                f"or {OrderStatus.NEEDS_REVIEW.value}, "
                 f"got {order.status}."
             )
         snapshot = order.parsed_snapshot or {}
@@ -172,19 +175,15 @@ class ExportService:
         client_code = order.client.client_code
 
         lines: list[ExportLine] = []
-        blocking_errors: list[str] = []
         for item in sorted(order.items, key=lambda row: row.row_number or 0):
             if item.status == OrderItemStatus.SKIPPED.value:
                 continue
             if item.status == OrderItemStatus.INVALID_QUANTITY.value:
-                blocking_errors.append(f"row {item.row_number}: invalid quantity")
                 continue
             if item.status != OrderItemStatus.RESOLVED.value or item.product is None:
-                blocking_errors.append(f"row {item.row_number}: unresolved product")
                 continue
             item_code = item.product.item_code
             if not item_code:
-                blocking_errors.append(f"row {item.row_number}: unresolved product")
                 continue
             lines.append(
                 ExportLine(
@@ -194,10 +193,8 @@ class ExportService:
                 )
             )
 
-        if blocking_errors:
-            raise ValueError("Order is not ready to export: " + "; ".join(blocking_errors[:10]))
         if not lines:
-            raise ValueError("Order has no exportable rows.")
+            raise ValueError("Order has no exportable rows. Resolve or keep at least one product before export.")
 
         return ResolvedOrderExport(
             converter_type=order.converter_type or "unknown",

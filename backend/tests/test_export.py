@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from datetime import date
 from decimal import Decimal
 from io import BytesIO
@@ -84,7 +83,7 @@ def test_export_filename_is_operator_friendly() -> None:
         )
     )
 
-    assert re.fullmatch(r"AsiaRetail_zakaz_120-31-4-04-2486_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.xlsx", filename)
+    assert filename == "AsiaRetail zakaz 01.xlsx"
 
 
 def test_export_order_uses_resolved_product_and_client(db_session: Session) -> None:
@@ -106,16 +105,45 @@ def test_export_order_uses_resolved_product_and_client(db_session: Session) -> N
     assert sheet["D6"].value == 4
     assert order.status == OrderStatus.EXPORTED.value
     assert order.export_file_id is None
-    assert result.filename.startswith("Piton_zakaz_100245_")
+    assert result.filename == "Piton zakaz 01.xlsx"
     workbook.close()
 
 
-def test_export_blocks_needs_review_order(db_session: Session) -> None:
+def test_export_needs_review_order_with_resolved_rows(db_session: Session) -> None:
     order = _resolved_order(db_session, status=OrderStatus.NEEDS_REVIEW.value)
     db_session.flush()
 
-    with pytest.raises(ValueError, match="status must be ready_to_export"):
-        ExportService(template_path=TEMPLATE_PATH).export_order(db_session, order.id)
+    result = ExportService(template_path=TEMPLATE_PATH).export_order(db_session, order.id)
+
+    workbook = openpyxl.load_workbook(BytesIO(result.content), data_only=True)
+    assert workbook.active["A6"].value == "ERP-100"
+    workbook.close()
+
+
+def test_export_skips_unresolved_items(db_session: Session) -> None:
+    order = _resolved_order(db_session, status=OrderStatus.NEEDS_REVIEW.value)
+    order.items.append(
+        OrderItem(
+            product_id=None,
+            raw_barcode="404",
+            normalized_barcode="404",
+            raw_name="Unknown Product",
+            raw_item_code="RAW-404",
+            item_code="RAW-404",
+            quantity=Decimal("8"),
+            row_number=7,
+            status=OrderItemStatus.UNRESOLVED.value,
+        )
+    )
+    db_session.flush()
+
+    result = ExportService(template_path=TEMPLATE_PATH).export_order(db_session, order.id)
+
+    workbook = openpyxl.load_workbook(BytesIO(result.content), data_only=True)
+    sheet = workbook.active
+    assert sheet["A6"].value == "ERP-100"
+    assert sheet["A7"].value is None
+    workbook.close()
 
 
 def test_export_blocks_unresolved_items(db_session: Session) -> None:
@@ -125,7 +153,7 @@ def test_export_blocks_unresolved_items(db_session: Session) -> None:
     item.product_id = None
     db_session.flush()
 
-    with pytest.raises(ValueError, match="unresolved product"):
+    with pytest.raises(ValueError, match="no exportable rows"):
         ExportService(template_path=TEMPLATE_PATH).export_order(db_session, order.id)
 
 
@@ -171,7 +199,7 @@ def test_export_blocks_product_without_item_code(db_session: Session) -> None:
     order = _resolved_order(db_session, product_item_code=None)
     db_session.flush()
 
-    with pytest.raises(ValueError, match="unresolved product"):
+    with pytest.raises(ValueError, match="no exportable rows"):
         ExportService(template_path=TEMPLATE_PATH).export_order(db_session, order.id)
 
 

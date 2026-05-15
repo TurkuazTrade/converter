@@ -82,6 +82,9 @@ class MatchingService:
         return client
 
     def match_item(self, converter_type: str, item: OrderItem) -> None:
+        if item.status == OrderItemStatus.SKIPPED.value:
+            return
+
         source_quantity = self._source_quantity(item)
         item.source_quantity = source_quantity
         item.conversion_multiplier = Decimal("1")
@@ -107,6 +110,17 @@ class MatchingService:
             f"Product not found by barcode={item.raw_barcode or '-'} "
             f"item_code={item.raw_item_code or '-'}."
         )
+
+    def skip_item(self, order_item_id: int) -> None:
+        item = self.db.get(OrderItem, order_item_id)
+        if item is None:
+            raise ValueError("Order item not found.")
+        item.product_id = None
+        item.item_code = item.raw_item_code or item.normalized_barcode
+        item.conversion_multiplier = Decimal("1")
+        item.quantity = self._source_quantity(item)
+        item.status = OrderItemStatus.SKIPPED.value
+        item.error_message = "Skipped by operator."
 
     @staticmethod
     def _source_quantity(item: OrderItem) -> Decimal:

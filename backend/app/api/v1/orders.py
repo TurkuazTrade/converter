@@ -239,6 +239,20 @@ def resolve_product(
     return {"order_id": order_id, "order_item_id": order_item_id, "status": "resolved"}
 
 
+@router.post("/{order_id}/skip-product")
+def skip_product(
+    order_id: int,
+    payload: dict,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> dict:
+    order_item_id = int(payload["order_item_id"])
+    MatchingService(db).skip_item(order_item_id)
+    ReprocessService(db).rematch_only(order_id, user_id=current_user.id)
+    db.commit()
+    return {"order_id": order_id, "order_item_id": order_item_id, "status": "skipped"}
+
+
 @router.post("/{order_id}/resolve-client")
 def resolve_client(
     order_id: int,
@@ -336,9 +350,7 @@ def _generate_export(db: Session, order_id: int, user_id: int):
     order = OrderRepository(db).get(order_id)
     if order is None:
         raise ValueError("Order not found.")
-    recalculation = ReprocessService(db).rematch_only(order_id, user_id=user_id)
-    if recalculation["status"] != OrderStatus.READY_TO_EXPORT.value:
-        raise ValueError("Order is not ready to export after recalculation. Resolve client and products first.")
+    ReprocessService(db).rematch_only(order_id, user_id=user_id)
     return ExportService().export_order(db, order_id, user_id=user_id)
 
 
@@ -350,7 +362,7 @@ def _refresh_order_state(db: Session, order: Order) -> None:
         1
         for item in order.items
         if item.status in {OrderItemStatus.UNRESOLVED.value, OrderItemStatus.INVALID_QUANTITY.value}
-        or item.product_id is None
+        or (item.status == OrderItemStatus.RESOLVED.value and item.product_id is None)
     )
     client_unresolved = order.client_id is None
     order.status = (

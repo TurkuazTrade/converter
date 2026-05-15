@@ -51,6 +51,14 @@ export function UnresolvedItemsPage() {
     await queryClient.invalidateQueries({ queryKey: ['order-preview', orderId] });
   }
 
+  async function skipProduct(orderItemId: number) {
+    await api.post(`/orders/${orderId}/skip-product`, {
+      order_item_id: orderItemId,
+    });
+    await queryClient.invalidateQueries({ queryKey: ['unresolved', orderId] });
+    await queryClient.invalidateQueries({ queryKey: ['order-preview', orderId] });
+  }
+
   return (
     <main className="page space-y-4">
       <div className="flex items-center justify-between">
@@ -130,9 +138,14 @@ export function UnresolvedItemsPage() {
                       </select>
                     </td>
                     <td>
-                      <button type="button" className="button" disabled={!selected[item.id]} onClick={() => resolveProduct(item.id)}>
-                        Сохранить
-                      </button>
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" className="button" disabled={!selected[item.id]} onClick={() => resolveProduct(item.id)}>
+                          Сохранить
+                        </button>
+                        <button type="button" className="button-secondary" onClick={() => skipProduct(item.id)}>
+                          Пропустить
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
