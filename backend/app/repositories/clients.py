@@ -21,6 +21,7 @@ class ClientRepository:
         pattern = f"%{search}%"
         stmt = base.where(
             (Client.name.ilike(pattern))
+            | (Client.name_2.ilike(pattern))
             | (Client.client_code.ilike(pattern))
             | (Client.client_code_2.ilike(pattern))
             | (Client.address.ilike(pattern))
@@ -46,6 +47,7 @@ class ClientRepository:
                         client.client_code,
                         client.client_code_2,
                         client.name,
+                        client.name_2,
                         client.address,
                         client.network_name,
                     )

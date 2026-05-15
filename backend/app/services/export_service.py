@@ -35,6 +35,7 @@ class ResolvedOrderExport:
     document_date: date
     fiche_no: str
     lines: list[ExportLine]
+    sequence_number: int = 1
 
 
 @dataclass(slots=True)
@@ -135,8 +136,12 @@ class ExportService:
         return content
 
     def build_filename(self, order: ResolvedOrderExport) -> str:
-        converter = sanitize_filename_part(self._filename_converter_prefix(order.converter_type), "Converter")
-        return f"{converter} zakaz 01.xlsx"
+        converter = self._filename_safe_text(
+            self._filename_converter_prefix(order.converter_type),
+            "Converter",
+        )
+        sequence = max(order.sequence_number, 1)
+        return f"{converter} zakaz {sequence:02d}.xlsx"
 
     @staticmethod
     def _filename_converter_prefix(converter_type: str) -> str:
@@ -188,7 +193,7 @@ class ExportService:
             lines.append(
                 ExportLine(
                     item_code=item_code,
-                    item_name=self._item_name_from_source(item),
+                    item_name="a",
                     quantity=float(item.quantity),
                 )
             )
@@ -200,15 +205,12 @@ class ExportService:
             converter_type=order.converter_type or "unknown",
             client_code=client_code,
             document_date=document_date,
-            fiche_no=order.order_number or f"{order.id:010d}",
+            fiche_no=f"KA{order.id:010d}",
             lines=lines,
+            sequence_number=order.id,
         )
 
     @staticmethod
-    def _item_name_from_source(item) -> str | None:
-        raw_name = (item.raw_name or "").strip()
-        if raw_name:
-            return raw_name
-        if item.product is not None and item.product.name:
-            return item.product.name
-        return item.product.item_code if item.product is not None else item.item_code
+    def _filename_safe_text(value: str, fallback: str) -> str:
+        text = sanitize_filename_part(value, fallback).replace("_", " ")
+        return re.sub(r"\s+", " ", text).strip() or fallback

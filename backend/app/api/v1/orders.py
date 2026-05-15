@@ -253,6 +253,23 @@ def skip_product(
     return {"order_id": order_id, "order_item_id": order_item_id, "status": "skipped"}
 
 
+@router.post("/{order_id}/update-multiplier")
+def update_multiplier(
+    order_id: int,
+    payload: dict,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> dict:
+    order_item_id = int(payload["order_item_id"])
+    MatchingService(db).update_item_multiplier(
+        order_item_id,
+        conversion_multiplier=_payload_decimal(payload.get("conversion_multiplier")),
+    )
+    ReprocessService(db).rematch_only(order_id, user_id=current_user.id)
+    db.commit()
+    return {"order_id": order_id, "order_item_id": order_item_id, "status": "updated"}
+
+
 @router.post("/{order_id}/resolve-client")
 def resolve_client(
     order_id: int,

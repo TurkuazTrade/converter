@@ -169,6 +169,24 @@ def test_manual_resolve_can_save_conversion_multiplier(db_session: Session) -> N
     assert item.quantity == Decimal("2.500")
 
 
+def test_update_multiplier_survives_rematch(db_session: Session) -> None:
+    product = _product(db_session, item_code="ERP-MULT", barcode="555")
+    order, item = _order_with_item(db_session, barcode="555")
+    item.source_quantity = Decimal("4")
+    item.quantity = Decimal("4")
+    db_session.flush()
+
+    service = MatchingService(db_session)
+    service.match_order(order.id)
+    service.update_item_multiplier(item.id, Decimal("3"))
+    service.match_order(order.id)
+
+    assert item.product_id == product.id
+    assert item.status == OrderItemStatus.RESOLVED.value
+    assert item.conversion_multiplier == Decimal("3")
+    assert item.quantity == Decimal("12")
+
+
 def _product(
     db_session: Session,
     *,

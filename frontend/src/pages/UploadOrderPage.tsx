@@ -6,7 +6,7 @@ import { converters } from '../shared/converters';
 export function UploadOrderPage() {
   const navigate = useNavigate();
   const [file, setFile] = useState<File | null>(null);
-  const [converterType, setConverterType] = useState('auto');
+  const [converterType, setConverterType] = useState('');
   const [force, setForce] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -23,7 +23,7 @@ export function UploadOrderPage() {
       form.append('file', file);
       const params = new URLSearchParams();
       params.set('force', String(force));
-      if (converterType !== 'auto') {
+      if (converterType) {
         params.set('converter_type', converterType);
       }
       const response = await api.post(`/orders/upload?${params.toString()}`, form);
@@ -56,9 +56,19 @@ export function UploadOrderPage() {
     <main className="page space-y-6">
       <section className="panel space-y-5">
         <div>
-          <h1 className="text-xl font-semibold">Загрузка заказа</h1>
-          <p className="mt-1 text-sm text-slate-400">Выберите Excel-файл. Система сама определит сеть и покажет, что нужно исправить перед выгрузкой.</p>
+          <h1 className="text-xl font-semibold">Конвертер</h1>
+          <p className="mt-1 text-sm text-slate-400">Выберите источник и Excel-файл. Если источник не выбран, система определит его автоматически.</p>
         </div>
+
+        <label className="block max-w-md space-y-2">
+          <span className="text-sm text-slate-400">Источник</span>
+          <select className="input w-full" value={converterType} onChange={(event) => setConverterType(event.target.value)}>
+            <option value="">Автовыбор</option>
+            {converters.filter(([value]) => value !== 'auto').map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </label>
 
         <div
           onDrop={onDrop}
@@ -76,14 +86,6 @@ export function UploadOrderPage() {
 
         {showAdvanced && (
           <div className="grid gap-4 rounded-md border border-slate-800 bg-slate-950 p-4 md:grid-cols-3">
-            <label className="space-y-2">
-              <span className="text-sm text-slate-400">Сеть</span>
-              <select className="input w-full" value={converterType} onChange={(event) => setConverterType(event.target.value)}>
-                {converters.map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
-                ))}
-              </select>
-            </label>
             <label className="flex items-end gap-2 pb-2 text-sm text-slate-300">
               <input type="checkbox" checked={force} onChange={(event) => setForce(event.target.checked)} />
               Загрузить повторно

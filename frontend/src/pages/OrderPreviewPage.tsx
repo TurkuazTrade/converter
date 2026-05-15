@@ -43,6 +43,7 @@ export function OrderPreviewPage() {
   const [clientId, setClientId] = useState('');
   const [newClientCode, setNewClientCode] = useState('');
   const [newClientName, setNewClientName] = useState('');
+  const [multiplierDrafts, setMultiplierDrafts] = useState<Record<number, string>>({});
   const [actionError, setActionError] = useState('');
   const { data, isLoading, error } = useQuery({
     queryKey: ['order-preview', orderId],
@@ -96,6 +97,24 @@ export function OrderPreviewPage() {
       await queryClient.invalidateQueries({ queryKey: ['order-preview', orderId] });
     } catch (err: any) {
       setActionError(err.response?.data?.detail ?? 'Не удалось создать клиента');
+    }
+  }
+
+  async function updateMultiplier(orderItemId: number, fallbackValue: number) {
+    setActionError('');
+    const value = Number(multiplierDrafts[orderItemId] ?? fallbackValue);
+    if (!Number.isFinite(value) || value <= 0) {
+      setActionError('Множитель должен быть больше нуля');
+      return;
+    }
+    try {
+      await api.post(`/orders/${orderId}/update-multiplier`, {
+        order_item_id: orderItemId,
+        conversion_multiplier: value,
+      });
+      await queryClient.invalidateQueries({ queryKey: ['order-preview', orderId] });
+    } catch (err: any) {
+      setActionError(err.response?.data?.detail ?? 'Не удалось сохранить множитель');
     }
   }
 
@@ -216,7 +235,21 @@ export function OrderPreviewPage() {
                 <td>{item.item_code}</td>
                 <td>{item.raw_name}</td>
                 <td>{item.source_quantity ?? item.quantity}</td>
-                <td>{item.conversion_multiplier}</td>
+                <td>
+                  <div className="flex min-w-36 items-center gap-2">
+                    <input
+                      className="input w-24"
+                      min="0.001"
+                      step="0.001"
+                      type="number"
+                      value={multiplierDrafts[item.id] ?? String(item.conversion_multiplier)}
+                      onChange={(event) => setMultiplierDrafts((prev) => ({ ...prev, [item.id]: event.target.value }))}
+                    />
+                    <button type="button" className="button-secondary" onClick={() => updateMultiplier(item.id, item.conversion_multiplier)}>
+                      OK
+                    </button>
+                  </div>
+                </td>
                 <td>{item.quantity}</td>
                 <td className={item.status === 'resolved' ? 'text-emerald-300' : 'text-amber-300'}>
                   {itemStatusLabels[item.status] ?? item.status}{item.error_message ? `: ${item.error_message}` : ''}

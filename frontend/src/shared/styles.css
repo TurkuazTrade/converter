@@ -6,6 +6,66 @@ body {
   @apply bg-slate-950 text-slate-100;
 }
 
+.app-shell {
+  @apply min-h-screen bg-slate-950 text-slate-100;
+}
+
+.app-header {
+  @apply sticky top-0 z-20 flex min-h-16 items-center justify-between border-b border-slate-800 bg-slate-900/95 px-5 backdrop-blur;
+}
+
+.brand-lockup {
+  @apply flex min-w-0 items-center gap-3 rounded-md px-1 py-1 text-white hover:text-white;
+}
+
+.header-link {
+  @apply rounded-md px-3 py-2 text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white;
+}
+
+.header-link-active {
+  @apply bg-slate-800 text-white;
+}
+
+.header-action {
+  @apply rounded-md border border-slate-700 px-3 py-2 text-sm font-medium text-slate-200 hover:border-slate-500 hover:bg-slate-800;
+}
+
+.app-body {
+  @apply flex min-h-[calc(100vh-4rem)];
+}
+
+.app-sidebar {
+  @apply sticky top-16 hidden h-[calc(100vh-4rem)] w-72 shrink-0 flex-col gap-5 border-r border-slate-800 bg-slate-950 px-4 py-5 text-sm md:flex;
+}
+
+.sidebar-section {
+  @apply space-y-2 border-b border-slate-900 pb-4 last:border-b-0;
+}
+
+.sidebar-label {
+  @apply px-3 text-xs font-semibold uppercase tracking-wide text-slate-500;
+}
+
+.sidebar-link {
+  @apply block rounded-md px-3 py-2 text-slate-400 hover:bg-slate-900 hover:text-white;
+}
+
+.sidebar-link-active {
+  @apply bg-slate-800 text-white shadow-sm;
+}
+
+.sidebar-summary {
+  @apply cursor-pointer rounded-md px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 hover:bg-slate-900 hover:text-slate-300;
+}
+
+.app-main {
+  @apply flex min-w-0 flex-1 flex-col;
+}
+
+.app-footer {
+  @apply mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 px-6 py-4 text-xs text-slate-500;
+}
+
 .page {
   @apply mx-auto max-w-7xl px-6 py-6;
 }

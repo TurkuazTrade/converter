@@ -96,11 +96,12 @@ class MatchingService:
 
         match = self._find_product_match(converter_type, item)
         if match is not None:
+            multiplier = self._manual_multiplier(item) or match.conversion_multiplier
             item.product_id = match.product.id
             item.item_code = match.product.item_code or item.raw_item_code or item.normalized_barcode
             item.source_quantity = source_quantity
-            item.conversion_multiplier = match.conversion_multiplier
-            item.quantity = source_quantity * match.conversion_multiplier
+            item.conversion_multiplier = multiplier
+            item.quantity = source_quantity * multiplier
             item.status = OrderItemStatus.RESOLVED.value
             item.error_message = None
             return
@@ -119,6 +120,7 @@ class MatchingService:
         item.item_code = item.raw_item_code or item.normalized_barcode
         item.conversion_multiplier = Decimal("1")
         item.quantity = self._source_quantity(item)
+        item.source_payload = {**(item.source_payload or {}), "manual_conversion_multiplier": None}
         item.status = OrderItemStatus.SKIPPED.value
         item.error_message = "Skipped by operator."
 
@@ -129,6 +131,16 @@ class MatchingService:
     @staticmethod
     def _multiplier(value: Decimal | None) -> Decimal:
         return value if value is not None and value > 0 else Decimal("1")
+
+    @staticmethod
+    def _manual_multiplier(item: OrderItem) -> Decimal | None:
+        payload = item.source_payload or {}
+        value = payload.get("manual_conversion_multiplier")
+        try:
+            multiplier = Decimal(str(value))
+        except Exception:
+            return None
+        return multiplier if multiplier > 0 else None
 
     def _find_product_match(self, converter_type: str, item: OrderItem) -> ProductMatch | None:
         if item.normalized_barcode:
@@ -246,8 +258,20 @@ class MatchingService:
         item.source_quantity = self._source_quantity(item)
         item.conversion_multiplier = multiplier
         item.quantity = item.source_quantity * item.conversion_multiplier
+        item.source_payload = {**(item.source_payload or {}), "manual_conversion_multiplier": str(multiplier)}
         item.status = OrderItemStatus.RESOLVED.value
         item.error_message = None
+
+    def update_item_multiplier(self, order_item_id: int, conversion_multiplier: Decimal | None) -> None:
+        item = self.db.get(OrderItem, order_item_id)
+        if item is None:
+            raise ValueError("Order item not found.")
+        multiplier = self._multiplier(conversion_multiplier)
+        source_quantity = self._source_quantity(item)
+        item.source_quantity = source_quantity
+        item.conversion_multiplier = multiplier
+        item.quantity = source_quantity * multiplier
+        item.source_payload = {**(item.source_payload or {}), "manual_conversion_multiplier": str(multiplier)}
 
     def save_client_mapping(self, order_id: int, client_id: int, user_id: int) -> None:
         order = self.db.get(Order, order_id)

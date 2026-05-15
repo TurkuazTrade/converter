@@ -80,10 +80,11 @@ def test_export_filename_is_operator_friendly() -> None:
             document_date=date(2026, 5, 14),
             fiche_no="0000000001",
             lines=[],
+            sequence_number=2,
         )
     )
 
-    assert filename == "AsiaRetail zakaz 01.xlsx"
+    assert filename == "AsiaRetail zakaz 02.xlsx"
 
 
 def test_export_order_uses_resolved_product_and_client(db_session: Session) -> None:
@@ -98,9 +99,10 @@ def test_export_order_uses_resolved_product_and_client(db_session: Session) -> N
     workbook = openpyxl.load_workbook(BytesIO(result.content), data_only=True)
     sheet = workbook.active
     assert sheet["B1"].value == "100245"
+    assert sheet["B4"].value == "KA0000000001"
     assert sheet["A6"].value == "ERP-100"
     assert sheet["A6"].value != "9999999999999"
-    assert sheet["B6"].value == "Raw Product"
+    assert sheet["B6"].value == "a"
     assert sheet["B6"].value != "Resolved Product"
     assert sheet["D6"].value == 4
     assert order.status == OrderStatus.EXPORTED.value
@@ -167,7 +169,7 @@ def test_exported_order_can_be_regenerated(db_session: Session) -> None:
     )
 
     workbook = openpyxl.load_workbook(BytesIO(result.content), data_only=True)
-    assert workbook.active["B6"].value == "Raw Product"
+    assert workbook.active["B6"].value == "a"
     workbook.close()
 
 
@@ -182,7 +184,7 @@ def test_export_falls_back_to_product_name_when_source_name_missing(db_session: 
     )
 
     workbook = openpyxl.load_workbook(BytesIO(result.content), data_only=True)
-    assert workbook.active["B6"].value == "Resolved Product"
+    assert workbook.active["B6"].value == "a"
     workbook.close()
 
 
