@@ -50,6 +50,7 @@ def test_export_matches_template_contract() -> None:
     assert sheet["A1"].value == "CLIENT CODE"
     assert sheet["B1"].value == "100245"
     assert sheet["A2"].value == "DATE"
+    assert _cell_date(sheet["B2"].value) == date(2026, 5, 14)
     assert sheet["B2"].number_format == template_sheet["B2"].number_format
     assert sheet["A3"].value == "WH NO"
     assert sheet["B3"].value == 1
@@ -99,11 +100,12 @@ def test_export_order_uses_resolved_product_and_client(db_session: Session) -> N
     workbook = openpyxl.load_workbook(BytesIO(result.content), data_only=True)
     sheet = workbook.active
     assert sheet["B1"].value == "100245"
+    assert _cell_date(sheet["B2"].value) == date.today()
     assert sheet["B4"].value == "KA0000000001"
     assert sheet["A6"].value == "ERP-100"
     assert sheet["A6"].value != "9999999999999"
-    assert sheet["B6"].value == "a"
-    assert sheet["B6"].value != "Resolved Product"
+    assert sheet["B6"].value == "Resolved Product"
+    assert sheet["B6"].value != "a"
     assert sheet["D6"].value == 4
     assert order.status == OrderStatus.EXPORTED.value
     assert order.export_file_id is None
@@ -169,7 +171,7 @@ def test_exported_order_can_be_regenerated(db_session: Session) -> None:
     )
 
     workbook = openpyxl.load_workbook(BytesIO(result.content), data_only=True)
-    assert workbook.active["B6"].value == "a"
+    assert workbook.active["B6"].value == "Resolved Product"
     workbook.close()
 
 
@@ -184,7 +186,24 @@ def test_export_falls_back_to_product_name_when_source_name_missing(db_session: 
     )
 
     workbook = openpyxl.load_workbook(BytesIO(result.content), data_only=True)
-    assert workbook.active["B6"].value == "a"
+    assert workbook.active["B6"].value == "Resolved Product"
+    workbook.close()
+
+
+def test_export_falls_back_to_source_name_when_product_name_missing(db_session: Session) -> None:
+    order = _resolved_order(db_session)
+    product = db_session.get(Product, order.items[0].product_id)
+    assert product is not None
+    product.name = ""
+    db_session.flush()
+
+    result = ExportService(template_path=TEMPLATE_PATH).export_order(
+        db_session,
+        order.id,
+    )
+
+    workbook = openpyxl.load_workbook(BytesIO(result.content), data_only=True)
+    assert workbook.active["B6"].value == "Raw Product"
     workbook.close()
 
 
@@ -249,3 +268,9 @@ def _resolved_order(
     )
     db_session.add(order)
     return order
+
+
+def _cell_date(value: object) -> date:
+    if hasattr(value, "date"):
+        return value.date()
+    return value

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
+import { FormModal } from '../components/FormModal';
 import { PaginationControls } from '../components/PaginationControls';
 
 type ClientForm = {
@@ -30,6 +31,7 @@ export function ClientsPage() {
   const [page, setPage] = useState(0);
   const [limit, setLimit] = useState(50);
   const [form, setForm] = useState<ClientForm>(emptyClientForm);
+  const [formOpen, setFormOpen] = useState(false);
   const [formError, setFormError] = useState('');
   const { data, isLoading } = useQuery({
     queryKey: ['clients', search, page, limit],
@@ -49,6 +51,12 @@ export function ClientsPage() {
     setPage(0);
   }
 
+  function openCreateClient() {
+    setForm(emptyClientForm);
+    setFormError('');
+    setFormOpen(true);
+  }
+
   function editClient(client: any) {
     setForm({
       id: client.id,
@@ -60,6 +68,13 @@ export function ClientsPage() {
       network_name: client.network_name ?? '',
       is_active: client.is_active,
     });
+    setFormError('');
+    setFormOpen(true);
+  }
+
+  function closeForm() {
+    setFormOpen(false);
+    setForm(emptyClientForm);
     setFormError('');
   }
 
@@ -80,7 +95,7 @@ export function ClientsPage() {
       } else {
         await api.post('/clients', payload);
       }
-      setForm(emptyClientForm);
+      closeForm();
       await queryClient.invalidateQueries({ queryKey: ['clients'] });
     } catch (err: any) {
       setFormError(err.response?.data?.detail ?? 'Не удалось сохранить клиента');
@@ -94,31 +109,11 @@ export function ClientsPage() {
           <h1 className="text-xl font-semibold">Клиенты</h1>
           <p className="mt-1 text-sm text-slate-400">Справочник клиентов для определения получателя заказа.</p>
         </div>
+        <button type="button" className="button" onClick={openCreateClient}>Добавить клиента</button>
       </div>
       <div className="flex flex-wrap gap-3">
         <input className="input w-full md:w-96" placeholder="Поиск по коду, названию или адресу" value={search} onChange={(event) => updateSearch(event.target.value)} />
       </div>
-      <section className="panel space-y-4">
-        <div className="grid gap-3 md:grid-cols-3">
-          <input className="input" placeholder="Код" value={form.client_code} onChange={(event) => setForm((prev) => ({ ...prev, client_code: event.target.value }))} />
-          <input className="input" placeholder="Код 2" value={form.client_code_2} onChange={(event) => setForm((prev) => ({ ...prev, client_code_2: event.target.value }))} />
-          <input className="input" placeholder="Сеть" value={form.network_name} onChange={(event) => setForm((prev) => ({ ...prev, network_name: event.target.value }))} />
-          <input className="input" placeholder="Название 1" value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} />
-          <input className="input" placeholder="Название 2" value={form.name_2} onChange={(event) => setForm((prev) => ({ ...prev, name_2: event.target.value }))} />
-          <input className="input" placeholder="Адрес" value={form.address} onChange={(event) => setForm((prev) => ({ ...prev, address: event.target.value }))} />
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-slate-300">
-            <input type="checkbox" checked={form.is_active} onChange={(event) => setForm((prev) => ({ ...prev, is_active: event.target.checked }))} />
-            Активен
-          </label>
-          <button type="button" className="button" disabled={!form.client_code.trim() || !form.name.trim()} onClick={saveClient}>
-            {form.id ? 'Сохранить клиента' : 'Добавить клиента'}
-          </button>
-          {form.id && <button type="button" className="button-secondary" onClick={() => setForm(emptyClientForm)}>Отмена</button>}
-          {formError && <span className="text-sm text-red-400">{formError}</span>}
-        </div>
-      </section>
       <PaginationControls
         page={page}
         limit={limit}
@@ -162,6 +157,54 @@ export function ClientsPage() {
           </table>
         )}
       </section>
+
+      {formOpen && (
+        <FormModal
+          title={form.id ? 'Редактировать клиента' : 'Добавить клиента'}
+          description="Клиент может иметь два рабочих названия для поиска и сопоставления."
+          onClose={closeForm}
+          actions={(
+            <>
+              <label className="flex items-center gap-2 text-sm text-slate-300">
+                <input type="checkbox" checked={form.is_active} onChange={(event) => setForm((prev) => ({ ...prev, is_active: event.target.checked }))} />
+                Активен
+              </label>
+              <button type="button" className="button" disabled={!form.client_code.trim() || !form.name.trim()} onClick={saveClient}>
+                Сохранить
+              </button>
+              <button type="button" className="button-secondary" onClick={closeForm}>Отмена</button>
+              {formError && <span className="text-sm text-red-400">{formError}</span>}
+            </>
+          )}
+        >
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="space-y-2">
+              <span className="text-sm text-slate-400">Код</span>
+              <input className="input w-full" value={form.client_code} onChange={(event) => setForm((prev) => ({ ...prev, client_code: event.target.value }))} />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm text-slate-400">Код 2</span>
+              <input className="input w-full" value={form.client_code_2} onChange={(event) => setForm((prev) => ({ ...prev, client_code_2: event.target.value }))} />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm text-slate-400">Название 1</span>
+              <input className="input w-full" value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm text-slate-400">Название 2</span>
+              <input className="input w-full" value={form.name_2} onChange={(event) => setForm((prev) => ({ ...prev, name_2: event.target.value }))} />
+            </label>
+            <label className="space-y-2 md:col-span-2">
+              <span className="text-sm text-slate-400">Адрес</span>
+              <input className="input w-full" value={form.address} onChange={(event) => setForm((prev) => ({ ...prev, address: event.target.value }))} />
+            </label>
+            <label className="space-y-2 md:col-span-2">
+              <span className="text-sm text-slate-400">Сеть</span>
+              <input className="input w-full" value={form.network_name} onChange={(event) => setForm((prev) => ({ ...prev, network_name: event.target.value }))} />
+            </label>
+          </div>
+        </FormModal>
+      )}
     </main>
   );
 }

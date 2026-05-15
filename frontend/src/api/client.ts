@@ -1,7 +1,17 @@
 import axios from 'axios';
 
+function apiBaseURL() {
+  const configured = import.meta.env.VITE_API_URL;
+  if (!configured) return '/api/v1';
+  const externalHost = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+  if (externalHost && (configured.includes('localhost') || configured.includes('127.0.0.1'))) {
+    return '/api/v1';
+  }
+  return configured;
+}
+
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ?? '/api/v1',
+  baseURL: apiBaseURL(),
 });
 
 api.interceptors.request.use((config) => {

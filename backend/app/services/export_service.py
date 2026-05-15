@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.constants import CONVERTER_FILENAME_PREFIXES
 from app.core.enums import OrderItemStatus, OrderStatus, ProcessingEventType
-from app.models.order import Order, ProcessingEvent
+from app.models.order import Order, OrderItem, ProcessingEvent
 from app.services.export_template import analyze_export_template
 from app.utils.normalization import sanitize_filename_part
 
@@ -170,10 +170,7 @@ class ExportService:
                 f"or {OrderStatus.NEEDS_REVIEW.value}, "
                 f"got {order.status}."
             )
-        snapshot = order.parsed_snapshot or {}
         document_date = date.today()
-        if snapshot.get("document_date"):
-            document_date = date.fromisoformat(snapshot["document_date"])
 
         if order.client is None or not order.client.client_code:
             raise ValueError("Order is not ready to export: client is not resolved.")
@@ -193,7 +190,7 @@ class ExportService:
             lines.append(
                 ExportLine(
                     item_code=item_code,
-                    item_name="a",
+                    item_name=self._item_name_for_export(item, item_code),
                     quantity=float(item.quantity),
                 )
             )
@@ -214,3 +211,11 @@ class ExportService:
     def _filename_safe_text(value: str, fallback: str) -> str:
         text = sanitize_filename_part(value, fallback).replace("_", " ")
         return re.sub(r"\s+", " ", text).strip() or fallback
+
+    @staticmethod
+    def _item_name_for_export(item: OrderItem, fallback_code: str) -> str:
+        product_name = (item.product.name or "").strip() if item.product is not None else ""
+        if product_name:
+            return product_name
+        raw_name = (item.raw_name or "").strip()
+        return raw_name or fallback_code

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
+import { FormModal } from '../components/FormModal';
 import { PaginationControls } from '../components/PaginationControls';
 
 type ProductForm = {
@@ -30,6 +31,8 @@ export function ProductsPage() {
   const [form, setForm] = useState<ProductForm>(emptyProductForm);
   const [formOpen, setFormOpen] = useState(false);
   const [formError, setFormError] = useState('');
+  const [backfillLoading, setBackfillLoading] = useState(false);
+  const [backfillMessage, setBackfillMessage] = useState('');
   const { data, isLoading } = useQuery({
     queryKey: ['products', search, page, limit],
     queryFn: async () => (
@@ -102,6 +105,22 @@ export function ProductsPage() {
     }
   }
 
+  async function backfillNamesFromOrders() {
+    setBackfillLoading(true);
+    setBackfillMessage('');
+    try {
+      const response = await api.post('/products/backfill-names');
+      const updated = Number(response.data?.updated ?? 0);
+      const scanned = Number(response.data?.scanned ?? 0);
+      setBackfillMessage(`Заполнено названий: ${updated}. Проверено строк заказов: ${scanned}.`);
+      await queryClient.invalidateQueries({ queryKey: ['products'] });
+    } catch (err: any) {
+      setBackfillMessage(err.response?.data?.detail ?? 'Не удалось заполнить названия из заказов');
+    } finally {
+      setBackfillLoading(false);
+    }
+  }
+
   return (
     <main className="page space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -109,11 +128,17 @@ export function ProductsPage() {
           <h1 className="text-xl font-semibold">Товары</h1>
           <p className="mt-1 text-sm text-slate-400">Справочник для сопоставления заказов.</p>
         </div>
-        <button type="button" className="button" onClick={openCreateProduct}>Добавить товар</button>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="button-secondary" disabled={backfillLoading} onClick={backfillNamesFromOrders}>
+            {backfillLoading ? 'Заполняем...' : 'Заполнить из заказов'}
+          </button>
+          <button type="button" className="button" onClick={openCreateProduct}>Добавить товар</button>
+        </div>
       </div>
       <div className="flex flex-wrap gap-3">
         <input className="input w-full md:w-96" placeholder="Поиск по коду, barcode или названию" value={search} onChange={(event) => updateSearch(event.target.value)} />
       </div>
+      {backfillMessage && <p className="text-sm text-slate-400">{backfillMessage}</p>}
       <PaginationControls
         page={page}
         limit={limit}
@@ -161,47 +186,12 @@ export function ProductsPage() {
       </section>
 
       {formOpen && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4 py-6">
-          <section className="panel w-full max-w-2xl space-y-4">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-semibold">{form.id ? 'Редактировать товар' : 'Добавить товар'}</h2>
-                <p className="mt-1 text-sm text-slate-400">Множитель хранится в карточке товара и применяется при сопоставлении.</p>
-              </div>
-              <button type="button" className="button-ghost" onClick={closeForm}>Закрыть</button>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="space-y-2">
-                <span className="text-sm text-slate-400">Код товара</span>
-                <input className="input w-full" value={form.item_code} onChange={(event) => setForm((prev) => ({ ...prev, item_code: event.target.value }))} />
-              </label>
-              <label className="space-y-2">
-                <span className="text-sm text-slate-400">Barcode</span>
-                <input className="input w-full" value={form.barcode} onChange={(event) => setForm((prev) => ({ ...prev, barcode: event.target.value }))} />
-              </label>
-              <label className="space-y-2 md:col-span-2">
-                <span className="text-sm text-slate-400">Название</span>
-                <input className="input w-full" value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} />
-              </label>
-              <label className="space-y-2">
-                <span className="text-sm text-slate-400">Множитель</span>
-                <input
-                  className="input w-full"
-                  min="0.001"
-                  step="0.001"
-                  type="number"
-                  value={form.conversion_multiplier}
-                  onChange={(event) => setForm((prev) => ({ ...prev, conversion_multiplier: event.target.value }))}
-                />
-              </label>
-              <label className="space-y-2">
-                <span className="text-sm text-slate-400">Price code</span>
-                <input className="input w-full" value={form.price_code} onChange={(event) => setForm((prev) => ({ ...prev, price_code: event.target.value }))} />
-              </label>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
+        <FormModal
+          title={form.id ? 'Редактировать товар' : 'Добавить товар'}
+          description="Множитель хранится в карточке товара и применяется при сопоставлении."
+          onClose={closeForm}
+          actions={(
+            <>
               <label className="flex items-center gap-2 text-sm text-slate-300">
                 <input type="checkbox" checked={form.is_active} onChange={(event) => setForm((prev) => ({ ...prev, is_active: event.target.checked }))} />
                 Активен
@@ -211,9 +201,39 @@ export function ProductsPage() {
               </button>
               <button type="button" className="button-secondary" onClick={closeForm}>Отмена</button>
               {formError && <span className="text-sm text-red-400">{formError}</span>}
-            </div>
-          </section>
-        </div>
+            </>
+          )}
+        >
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="space-y-2">
+              <span className="text-sm text-slate-400">Код товара</span>
+              <input className="input w-full" value={form.item_code} onChange={(event) => setForm((prev) => ({ ...prev, item_code: event.target.value }))} />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm text-slate-400">Barcode</span>
+              <input className="input w-full" value={form.barcode} onChange={(event) => setForm((prev) => ({ ...prev, barcode: event.target.value }))} />
+            </label>
+            <label className="space-y-2 md:col-span-2">
+              <span className="text-sm text-slate-400">Название</span>
+              <input className="input w-full" value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm text-slate-400">Множитель</span>
+              <input
+                className="input w-full"
+                min="0.001"
+                step="0.001"
+                type="number"
+                value={form.conversion_multiplier}
+                onChange={(event) => setForm((prev) => ({ ...prev, conversion_multiplier: event.target.value }))}
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm text-slate-400">Price code</span>
+              <input className="input w-full" value={form.price_code} onChange={(event) => setForm((prev) => ({ ...prev, price_code: event.target.value }))} />
+            </label>
+          </div>
+        </FormModal>
       )}
     </main>
   );

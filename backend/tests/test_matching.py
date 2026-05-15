@@ -107,6 +107,46 @@ def test_matching_does_not_auto_assign_by_similar_name(db_session: Session) -> N
     assert item.status == OrderItemStatus.UNRESOLVED.value
 
 
+def test_matching_fills_empty_product_name_from_order_item(db_session: Session) -> None:
+    product = _product(db_session, item_code="ERP-NAME", name="", barcode="123")
+    order, item = _order_with_item(db_session, barcode="123", raw_name="Order Product Name")
+
+    MatchingService(db_session).match_order(order.id)
+
+    assert item.product_id == product.id
+    assert product.name == "Order Product Name"
+
+
+def test_matching_does_not_overwrite_existing_product_name(db_session: Session) -> None:
+    product = _product(db_session, item_code="ERP-NAMED", name="Catalog Product", barcode="321")
+    order, item = _order_with_item(db_session, barcode="321", raw_name="Network Product")
+
+    MatchingService(db_session).match_order(order.id)
+
+    assert item.product_id == product.id
+    assert product.name == "Catalog Product"
+
+
+def test_backfill_product_names_from_order_items(db_session: Session) -> None:
+    product = _product(db_session, item_code="ERP-BACKFILL", name="")
+    order, item = _order_with_item(db_session, barcode="555", raw_name="Rare Network Name")
+    item.product_id = product.id
+    item.status = OrderItemStatus.RESOLVED.value
+    order_2, item_2 = _order_with_item(db_session, barcode="556", raw_name="Popular Network Name")
+    item_2.product_id = product.id
+    item_2.status = OrderItemStatus.RESOLVED.value
+    order_3, item_3 = _order_with_item(db_session, barcode="557", raw_name="Popular Network Name")
+    item_3.product_id = product.id
+    item_3.status = OrderItemStatus.RESOLVED.value
+    db_session.flush()
+
+    result = MatchingService(db_session).backfill_product_names_from_orders()
+
+    assert result["scanned"] == 3
+    assert result["updated"] == 1
+    assert product.name == "Popular Network Name"
+
+
 def test_resolve_mapping_then_rematch_sets_order_ready(db_session: Session) -> None:
     product = _product(db_session, item_code="ERP-4")
     client = Client(
@@ -183,6 +223,7 @@ def test_update_multiplier_survives_rematch(db_session: Session) -> None:
 
     assert item.product_id == product.id
     assert item.status == OrderItemStatus.RESOLVED.value
+    assert product.conversion_multiplier == Decimal("3")
     assert item.conversion_multiplier == Decimal("3")
     assert item.quantity == Decimal("12")
 

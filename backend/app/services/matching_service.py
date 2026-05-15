@@ -1,17 +1,18 @@
 from __future__ import annotations
 
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.enums import OrderItemStatus
 from app.models.client import Client
 from app.models.mapping import ClientMapping, ProductMapping
 from app.models.order import Order, OrderItem
 from app.models.product import Product, ProductBarcode
-from app.utils.normalization import normalize_key
+from app.utils.normalization import normalize_key, normalize_text
 
 
 @dataclass(frozen=True)
@@ -99,6 +100,7 @@ class MatchingService:
             multiplier = self._manual_multiplier(item) or match.conversion_multiplier
             item.product_id = match.product.id
             item.item_code = match.product.item_code or item.raw_item_code or item.normalized_barcode
+            self._fill_product_name_from_item(match.product, item)
             item.source_quantity = source_quantity
             item.conversion_multiplier = multiplier
             item.quantity = source_quantity * multiplier
@@ -254,6 +256,7 @@ class MatchingService:
         )
         self.db.add(mapping)
         self.db.flush()
+        self._fill_product_name_from_item(product, item)
         item.product_id = product.id
         item.item_code = product.item_code or item.raw_item_code or item.normalized_barcode
         item.source_quantity = self._source_quantity(item)
@@ -273,10 +276,87 @@ class MatchingService:
         item.conversion_multiplier = multiplier
         item.quantity = source_quantity * multiplier
         item.source_payload = {**(item.source_payload or {}), "manual_conversion_multiplier": str(multiplier)}
+        if item.product is not None:
+            item.product.conversion_multiplier = multiplier
+
+    def backfill_product_names_from_orders(self) -> dict[str, int | str]:
+        items = list(
+            self.db.scalars(
+                select(OrderItem)
+                .options(selectinload(OrderItem.product))
+                .where(
+                    OrderItem.product_id.is_not(None),
+                    OrderItem.raw_name.is_not(None),
+                    OrderItem.status == OrderItemStatus.RESOLVED.value,
+                )
+                .order_by(OrderItem.id)
+            )
+        )
+        candidates: dict[int, Counter[str]] = defaultdict(Counter)
+        products: dict[int, Product] = {}
+        for item in items:
+            product = item.product
+            if product is None or not self._product_name_needs_fill(product):
+                continue
+            name = self._candidate_product_name(product, item)
+            if not name:
+                continue
+            candidates[product.id][name] += 1
+            products[product.id] = product
+
+        updated = 0
+        candidate_count = 0
+        for product_id, names in candidates.items():
+            candidate_count += sum(names.values())
+            product = products[product_id]
+            if not self._product_name_needs_fill(product):
+                continue
+            product.name = names.most_common(1)[0][0]
+            updated += 1
+
+        return {
+            "status": "ok",
+            "scanned": len(items),
+            "candidates": candidate_count,
+            "updated": updated,
+        }
 
     @classmethod
     def _product_multiplier(cls, product: Product) -> Decimal:
         return cls._multiplier(product.conversion_multiplier)
+
+    def _fill_product_name_from_item(self, product: Product, item: OrderItem) -> bool:
+        if not self._product_name_needs_fill(product):
+            return False
+        name = self._candidate_product_name(product, item)
+        if not name:
+            return False
+        product.name = name
+        return True
+
+    @staticmethod
+    def _product_name_needs_fill(product: Product) -> bool:
+        current_name = normalize_text(product.name)
+        if not current_name:
+            return True
+        current_key = normalize_key(current_name)
+        technical_keys = {normalize_key(product.item_code)}
+        return current_key in technical_keys
+
+    @staticmethod
+    def _candidate_product_name(product: Product, item: OrderItem) -> str | None:
+        name = normalize_text(item.raw_name)
+        if not name:
+            return None
+        name_key = normalize_key(name)
+        technical_keys = {
+            normalize_key(product.item_code),
+            normalize_key(item.item_code),
+            normalize_key(item.raw_item_code),
+            normalize_key(item.raw_barcode),
+            normalize_key(item.normalized_barcode),
+        }
+        return None if name_key in technical_keys else name
 
     def save_client_mapping(self, order_id: int, client_id: int, user_id: int) -> None:
         order = self.db.get(Order, order_id)

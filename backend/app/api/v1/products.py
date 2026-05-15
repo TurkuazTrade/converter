@@ -14,6 +14,7 @@ from app.models.user import User
 from app.repositories.products import ProductRepository
 from app.schemas.product import ProductCreate, ProductRead, ProductUpdate
 from app.services.import_service import ImportService
+from app.services.matching_service import MatchingService
 from app.utils.normalization import normalize_barcode, normalize_item_code, normalize_text
 
 router = APIRouter()
@@ -103,6 +104,16 @@ async def import_products(
     converter_type: str | None = None,
 ) -> dict:
     result = await ImportService(db).import_products(file, converter_type=converter_type)
+    db.commit()
+    return result
+
+
+@router.post("/backfill-names")
+def backfill_product_names(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> dict:
+    result = MatchingService(db).backfill_product_names_from_orders()
     db.commit()
     return result
 

@@ -26,13 +26,19 @@ def bootstrap_development_app() -> None:
         return
     with SessionLocal() as db:
         users = UserRepository(db)
-        if users.get_by_email(settings.default_admin_email) is None:
-            users.create_admin(
-                email=settings.default_admin_email,
-                password=settings.default_admin_password,
-                full_name=settings.default_admin_full_name,
-            )
-            db.commit()
+        users.ensure_user(
+            email=settings.default_admin_email,
+            password=settings.default_admin_password,
+            full_name=settings.default_admin_full_name,
+            role="admin",
+        )
+        users.ensure_user(
+            email=settings.default_test_user_email,
+            password=settings.default_test_user_password,
+            full_name=settings.default_test_user_full_name,
+            role="admin",
+        )
+        db.commit()
 
 
 def _ensure_development_columns() -> None:

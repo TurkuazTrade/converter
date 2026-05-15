@@ -4,8 +4,8 @@ import { api } from '../api/client';
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('admin@example.com');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState('user');
+  const [password, setPassword] = useState('password');
   const [error, setError] = useState('');
 
   async function submit(event: FormEvent) {
@@ -16,7 +16,7 @@ export function LoginPage() {
       localStorage.setItem('access_token', response.data.access_token);
       navigate('/upload');
     } catch {
-      setError('Login failed');
+      setError('Не удалось войти. Проверьте логин и пароль.');
     }
   }
 
@@ -25,10 +25,10 @@ export function LoginPage() {
       <form onSubmit={submit} className="panel w-full max-w-md space-y-4">
         <div>
           <h1 className="text-xl font-semibold">Вход в Turkuaz CRM</h1>
-          <p className="mt-1 text-sm text-slate-400">Введите данные администратора.</p>
+          <p className="mt-1 text-sm text-slate-400">Введите тестовый логин и пароль.</p>
         </div>
         <label className="block space-y-2">
-          <span className="text-sm text-slate-400">Email</span>
+          <span className="text-sm text-slate-400">Email или логин</span>
           <input className="input w-full" value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
         <label className="block space-y-2">

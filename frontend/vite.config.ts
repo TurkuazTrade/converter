@@ -5,8 +5,9 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
+    allowedHosts: ['goldfish-creed-deniable.ngrok-free.dev'],
     proxy: {
-      '/api': 'http://localhost:8000',
+      '/api': process.env.VITE_PROXY_TARGET ?? 'http://localhost:8000',
     },
   },
 });

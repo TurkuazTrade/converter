@@ -30,3 +30,25 @@ class UserRepository:
         self.db.add(user)
         self.db.flush()
         return user
+
+    def ensure_user(self, email: str, password: str, full_name: str, role: str = "admin") -> User:
+        user = self.get_by_email(email)
+        hashed_password = get_password_hash(password)
+        if user is None:
+            user = User(
+                email=email,
+                hashed_password=hashed_password,
+                full_name=full_name,
+                role=role,
+                is_active=True,
+            )
+            self.db.add(user)
+            self.db.flush()
+            return user
+
+        user.hashed_password = hashed_password
+        user.full_name = full_name
+        user.role = role
+        user.is_active = True
+        self.db.flush()
+        return user

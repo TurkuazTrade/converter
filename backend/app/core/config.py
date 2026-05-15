@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     default_admin_email: str = "admin@example.com"
     default_admin_password: str = "admin123"
     default_admin_full_name: str = "Admin"
+    default_test_user_login: str = "user"
+    default_test_user_email: str = "user@example.com"
+    default_test_user_password: str = "password"
+    default_test_user_full_name: str = "Test User"
     backend_cors_origins: list[str] = Field(
         default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"]
     )
