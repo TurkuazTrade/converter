@@ -1,0 +1,97 @@
+from __future__ import annotations
+
+from sqlalchemy.orm import Session
+
+from app.models.product import Product
+from app.repositories.products import ProductRepository
+
+
+def test_product_repository_filters_and_sorts(db_session: Session) -> None:
+    db_session.add_all(
+        [
+            Product(
+                item_code="ERP-2",
+                name="Second",
+                brand="Brand B",
+                trade_mark="Mark B",
+                product_type="food",
+                is_active=True,
+                exclude_from_export=False,
+            ),
+            Product(
+                item_code="ERP-1",
+                name="First",
+                brand="Brand A",
+                trade_mark="Mark A",
+                product_type="nonfood",
+                is_active=True,
+                exclude_from_export=True,
+            ),
+            Product(
+                item_code="ERP-3",
+                name="Third",
+                brand="Brand A",
+                trade_mark="Mark A",
+                product_type="food",
+                is_active=False,
+                exclude_from_export=False,
+            ),
+        ]
+    )
+    db_session.flush()
+
+    products = ProductRepository(db_session).list(
+        product_type="food",
+        is_active=True,
+        sort_by="item_code",
+        sort_dir="desc",
+    )
+
+    assert [product.item_code for product in products] == ["ERP-2"]
+
+
+def test_product_repository_filters_export_exclusion_and_brand(db_session: Session) -> None:
+    db_session.add_all(
+        [
+            Product(
+                item_code="ERP-1",
+                name="First",
+                brand="Brand A",
+                product_type="food",
+                is_active=True,
+                exclude_from_export=True,
+            ),
+            Product(
+                item_code="ERP-2",
+                name="Second",
+                brand="Brand A",
+                product_type="food",
+                is_active=True,
+                exclude_from_export=False,
+            ),
+        ]
+    )
+    db_session.flush()
+
+    products = ProductRepository(db_session).list(
+        brand="Brand A",
+        exclude_from_export=True,
+    )
+
+    assert [product.item_code for product in products] == ["ERP-1"]
+
+
+def test_product_repository_filters_product_type_case_insensitive(db_session: Session) -> None:
+    db_session.add(
+        Product(
+            item_code="ERP-1",
+            name="First",
+            product_type="flint",
+            is_active=True,
+        )
+    )
+    db_session.flush()
+
+    products = ProductRepository(db_session).list(product_type="Flint")
+
+    assert [product.item_code for product in products] == ["ERP-1"]
