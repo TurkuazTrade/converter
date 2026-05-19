@@ -1,0 +1,349 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --app-bg: #0b1220;
+  --app-surface: #111827;
+  --app-surface-muted: #0b1220;
+  --app-surface-soft: #172033;
+  --app-header: rgba(11, 18, 32, 0.94);
+  --app-sidebar: #0f172a;
+  --app-border: #1e293b;
+  --app-border-strong: #334155;
+  --app-text: #f8fafc;
+  --app-text-muted: #94a3b8;
+  --app-text-soft: #64748b;
+  --app-accent: #2563eb;
+  --app-accent-hover: #3b82f6;
+  --app-shadow: 0 20px 40px rgba(0, 0, 0, 0.24);
+}
+
+:root.theme-light {
+  --app-bg: #f3f6fb;
+  --app-surface: #ffffff;
+  --app-surface-muted: #f8fafc;
+  --app-surface-soft: #eef3fb;
+  --app-header: rgba(255, 255, 255, 0.94);
+  --app-sidebar: #ffffff;
+  --app-border: #d9e2ef;
+  --app-border-strong: #b7c4d6;
+  --app-text: #0f172a;
+  --app-text-muted: #526174;
+  --app-text-soft: #758398;
+  --app-accent: #2563eb;
+  --app-accent-hover: #1d4ed8;
+  --app-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+}
+
+body {
+  background: var(--app-bg);
+  color: var(--app-text);
+  @apply antialiased;
+}
+
+.app-shell {
+  background: var(--app-bg);
+  color: var(--app-text);
+  @apply min-h-screen;
+}
+
+.app-header {
+  background: var(--app-header);
+  border-color: var(--app-border);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  @apply sticky top-0 z-20 flex min-h-16 items-center justify-between border-b px-5 backdrop-blur-xl;
+}
+
+.brand-lockup {
+  color: var(--app-text);
+  @apply flex min-w-0 items-center gap-3 rounded-md px-1 py-1;
+}
+
+.brand-mark {
+  background: var(--app-accent);
+  color: white;
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.26);
+  @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-sm font-bold;
+}
+
+.brand-copy {
+  @apply min-w-0;
+}
+
+.brand-title {
+  color: var(--app-text);
+  @apply block truncate text-sm font-semibold;
+}
+
+.brand-subtitle {
+  color: var(--app-text-muted);
+  @apply block truncate text-xs;
+}
+
+.environment-pill {
+  background: color-mix(in srgb, #10b981 14%, var(--app-surface));
+  border-color: color-mix(in srgb, #10b981 34%, var(--app-border));
+  color: #34d399;
+  @apply items-center rounded-full border px-3 py-1 text-xs font-medium;
+}
+
+.header-link {
+  color: var(--app-text-muted);
+  @apply rounded-md px-3 py-2 text-sm font-medium;
+}
+
+.header-link-active {
+  background: var(--app-surface-soft);
+  color: var(--app-text);
+}
+
+.theme-toggle {
+  background: var(--app-surface-muted);
+  border-color: var(--app-border);
+  @apply inline-flex items-center gap-1 rounded-md border p-1;
+}
+
+.theme-toggle-icon {
+  color: var(--app-text-soft);
+  @apply flex h-8 w-8 items-center justify-center rounded text-sm font-medium transition;
+}
+
+.theme-toggle-icon-active {
+  background: var(--app-accent);
+  color: white;
+  box-shadow: 0 8px 16px rgba(37, 99, 235, 0.24);
+}
+
+.header-action {
+  border-color: var(--app-border-strong);
+  color: var(--app-text);
+  background: color-mix(in srgb, var(--app-surface) 70%, transparent);
+  @apply rounded-md border px-3 py-2 text-sm font-medium transition;
+}
+
+.header-action:hover {
+  background: var(--app-surface-soft);
+  border-color: var(--app-text-soft);
+}
+
+.app-body {
+  @apply flex min-h-[calc(100vh-4rem)] min-w-0 items-stretch overflow-x-clip;
+}
+
+.app-sidebar {
+  background: var(--app-sidebar);
+  border-color: var(--app-border);
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.02);
+  @apply sticky top-16 hidden h-[calc(100vh-4rem)] w-72 shrink-0 flex-col gap-4 overflow-y-auto border-r px-4 py-5 text-sm md:flex;
+}
+
+.app-sidebar-hidden {
+  @apply md:hidden;
+}
+
+.sidebar-section {
+  border-color: var(--app-border);
+  @apply space-y-2 border-b pb-4 last:border-b-0;
+}
+
+.sidebar-label {
+  color: var(--app-text-soft);
+  @apply px-3 text-xs font-semibold uppercase tracking-wide;
+}
+
+.sidebar-link {
+  color: var(--app-text-muted);
+  @apply relative block rounded-md px-3 py-2 font-medium transition;
+}
+
+.sidebar-link:hover {
+  background: var(--app-surface-soft);
+  color: var(--app-text);
+}
+
+.sidebar-link-active {
+  background: color-mix(in srgb, var(--app-accent) 92%, var(--app-surface));
+  color: white;
+  box-shadow: 0 12px 22px rgba(37, 99, 235, 0.18);
+}
+
+.sidebar-summary {
+  color: var(--app-text-soft);
+  @apply cursor-pointer rounded-md px-3 py-2 text-xs font-semibold uppercase tracking-wide transition;
+}
+
+.sidebar-summary:hover {
+  background: var(--app-surface-soft);
+  color: var(--app-text-muted);
+}
+
+.sidebar-status {
+  background: color-mix(in srgb, var(--app-surface) 70%, transparent);
+  border-color: var(--app-border);
+  @apply mt-auto flex items-center justify-between rounded-md border px-3 py-3 text-xs;
+}
+
+.sidebar-status-label {
+  color: var(--app-text-soft);
+  @apply block uppercase tracking-wide;
+}
+
+.sidebar-status-value {
+  color: var(--app-text);
+  @apply mt-1 block font-semibold;
+}
+
+.sidebar-status-dot {
+  background: #22c55e;
+  box-shadow: 0 0 0 4px color-mix(in srgb, #22c55e 18%, transparent);
+  @apply h-2.5 w-2.5 rounded-full;
+}
+
+.app-main {
+  @apply flex min-w-0 flex-1 flex-col overflow-x-hidden;
+}
+
+.app-footer {
+  border-color: var(--app-border);
+  color: var(--app-text-soft);
+  background: color-mix(in srgb, var(--app-surface) 42%, transparent);
+  @apply mt-auto flex flex-wrap items-center justify-between gap-2 border-t px-6 py-4 text-xs;
+}
+
+.page {
+  @apply mx-auto w-full min-w-0 max-w-7xl px-6 py-6;
+}
+
+.panel {
+  background: var(--app-surface);
+  border-color: var(--app-border);
+  box-shadow: var(--app-shadow);
+  @apply min-w-0 rounded-lg border p-5;
+}
+
+.compact-panel {
+  background: color-mix(in srgb, var(--app-surface) 72%, transparent);
+  border-color: var(--app-border);
+  @apply min-w-0 rounded-md border px-4 py-3;
+}
+
+.button {
+  background: var(--app-accent);
+  @apply rounded-md px-4 py-2 text-sm font-medium text-white transition;
+}
+
+.button:hover {
+  background: var(--app-accent-hover);
+}
+
+.button-secondary {
+  background: var(--app-surface-soft);
+  color: var(--app-text);
+  @apply rounded-md px-4 py-2 text-sm font-medium transition;
+}
+
+.button-secondary:hover {
+  filter: brightness(1.05);
+}
+
+.button-ghost {
+  color: var(--app-text-muted);
+  @apply rounded-md px-3 py-2 text-sm transition;
+}
+
+.button-ghost:hover {
+  background: var(--app-surface-soft);
+  color: var(--app-text);
+}
+
+.button:disabled,
+.button-secondary:disabled {
+  @apply cursor-not-allowed opacity-50;
+}
+
+.input {
+  background: var(--app-surface-muted);
+  border-color: var(--app-border-strong);
+  color: var(--app-text);
+  @apply rounded-md border px-3 py-2 text-sm outline-none transition focus:border-blue-500;
+}
+
+.table {
+  @apply min-w-max w-full border-collapse text-left text-sm;
+}
+
+.table th {
+  background: var(--app-surface-muted);
+  border-color: var(--app-border);
+  color: var(--app-text-muted);
+  @apply border-b px-3 py-2 text-xs font-semibold uppercase tracking-wide;
+}
+
+.table td {
+  border-color: var(--app-border);
+  @apply border-b px-3 py-2 align-top;
+}
+
+.status-pill {
+  background: var(--app-surface-muted);
+  border-color: var(--app-border);
+  color: var(--app-text-muted);
+  @apply rounded-full border px-3 py-1 text-xs;
+}
+
+.status-pill-ok {
+  @apply rounded-full border border-emerald-700 bg-emerald-950/40 px-3 py-1 text-xs text-emerald-200;
+}
+
+.status-pill-warn {
+  @apply rounded-full border border-amber-700 bg-amber-950/40 px-3 py-1 text-xs text-amber-200;
+}
+
+.status-pill-danger {
+  @apply rounded-full border border-red-700 bg-red-950/40 px-3 py-1 text-xs text-red-200;
+}
+
+.theme-light .bg-slate-950 {
+  background-color: var(--app-surface-muted);
+}
+
+.theme-light .bg-slate-900,
+.theme-light .bg-slate-900\/95 {
+  background-color: var(--app-surface);
+}
+
+.theme-light .bg-slate-800,
+.theme-light .hover\:bg-slate-800:hover,
+.theme-light .hover\:bg-slate-900:hover {
+  background-color: var(--app-surface-soft);
+}
+
+.theme-light .border-slate-900,
+.theme-light .border-slate-800,
+.theme-light .border-slate-700,
+.theme-light .border-slate-600 {
+  border-color: var(--app-border);
+}
+
+.theme-light .text-slate-100,
+.theme-light .text-slate-200,
+.theme-light .text-slate-300 {
+  color: var(--app-text);
+}
+
+.theme-light .text-slate-400 {
+  color: var(--app-text-muted);
+}
+
+.theme-light .text-slate-500 {
+  color: var(--app-text-soft);
+}
+
+.theme-light .brand-lockup .text-white {
+  color: var(--app-text);
+}
+
+.theme-light .hover\:text-white:hover {
+  color: var(--app-text);
+}
