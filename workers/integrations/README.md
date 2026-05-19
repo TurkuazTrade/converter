@@ -1,5 +1,15 @@
 # Integrations Worker
 
-Placeholder for future external API sync, webhooks, and retryable integration jobs.
+Reserved boundary for external system integrations.
 
-External systems can be slow or unstable, so keep retry logic away from the main request/response API when it grows.
+Use this worker when integrations become slow, retry-heavy, scheduled, or unreliable enough that they should not run inside normal API requests.
+
+Typical responsibilities:
+
+- external API synchronization
+- webhook processing
+- retry queues
+- scheduled imports/exports
+- integration audit logs
+
+Keep integration contracts explicit: the API should enqueue or record work, while the worker owns retries and external communication.
