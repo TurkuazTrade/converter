@@ -52,6 +52,15 @@ def _ensure_development_columns() -> None:
         else set()
     )
     with engine.begin() as connection:
+        order_columns = (
+            {column["name"] for column in inspector.get_columns("orders")}
+            if "orders" in inspector.get_table_names()
+            else set()
+        )
+        if "export_downloaded_at" not in order_columns:
+            connection.execute(text("ALTER TABLE orders ADD COLUMN export_downloaded_at DATETIME"))
+        if "export_downloads" not in order_columns:
+            connection.execute(text("ALTER TABLE orders ADD COLUMN export_downloads JSON"))
         if "name_2" not in client_columns:
             connection.execute(text("ALTER TABLE clients ADD COLUMN name_2 VARCHAR(512)"))
         if "conversion_multiplier" not in product_columns:
@@ -137,6 +146,11 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=[
+        "Content-Disposition",
+        "X-Export-Previously-Downloaded-By",
+        "X-Export-Previously-Downloaded-At",
+    ],
 )
 
 app.include_router(api_router)

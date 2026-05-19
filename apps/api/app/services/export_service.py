@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from copy import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from hashlib import sha256
 from io import BytesIO
@@ -137,8 +137,13 @@ class ExportService:
                     worksheet.title = self._unique_sheet_title(existing_titles, product_type)
                 worksheets.append((worksheet, lines))
 
-            for worksheet, lines in worksheets:
-                self._write_export_sheet(worksheet, layout, order, lines)
+            for index, (worksheet, lines) in enumerate(worksheets):
+                sheet_order = (
+                    replace(order, fiche_no=self._fiche_no_for_sequence(order.sequence_number + index))
+                    if len(worksheets) > 1
+                    else order
+                )
+                self._write_export_sheet(worksheet, layout, sheet_order, lines)
 
             if order.problems:
                 self._write_problem_sheet(workbook, order.problems)
@@ -160,7 +165,8 @@ class ExportService:
         suffix = ""
         if order.product_type_filter:
             suffix = f" {self._filename_safe_text(order.product_type_filter, 'type')}"
-        return f"{converter} zakaz {sequence:04d}{suffix}.xlsx"
+        export_date = order.document_date.isoformat()
+        return f"{converter} zakaz {export_date} {sequence:04d}{suffix}.xlsx"
 
     @staticmethod
     def _filename_converter_prefix(converter_type: str) -> str:
@@ -251,7 +257,7 @@ class ExportService:
             converter_type=order.converter_type or "unknown",
             client_code=client_code,
             document_date=document_date,
-            fiche_no=f"KA{sequence:010d}",
+            fiche_no=self._fiche_no_for_sequence(sequence),
             lines=lines,
             problems=problems,
             product_type_filter=product_type_filter,
@@ -266,6 +272,10 @@ class ExportService:
             )
         )
         return int(export_count or 0) * 20
+
+    @staticmethod
+    def _fiche_no_for_sequence(sequence: int) -> str:
+        return f"KA{max(sequence, 0):010d}"
 
     @staticmethod
     def _excluded_product_types(db: Session) -> set[str]:

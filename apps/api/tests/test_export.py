@@ -9,10 +9,12 @@ import openpyxl
 import pytest
 from sqlalchemy.orm import Session
 
+from app.api.v1.orders import _export_download_info, _mark_export_downloaded
 from app.core.enums import OrderItemStatus, OrderStatus
 from app.models.client import Client
 from app.models.order import Order, OrderItem, ProcessingEvent
 from app.models.product import Product, ProductTypeExportRule
+from app.models.user import User
 from app.services.export_service import ExportLine, ExportService, ResolvedOrderExport
 
 
@@ -111,7 +113,7 @@ def test_export_filename_is_operator_friendly() -> None:
         )
     )
 
-    assert filename == "AsiaRetail zakaz 0020.xlsx"
+    assert filename == "AsiaRetail zakaz 2026-05-14 0020.xlsx"
 
 
 def test_export_order_uses_resolved_product_and_client(db_session: Session) -> None:
@@ -135,7 +137,7 @@ def test_export_order_uses_resolved_product_and_client(db_session: Session) -> N
     assert sheet["D6"].value == 4
     assert order.status == OrderStatus.EXPORTED.value
     assert order.export_file_id is None
-    assert result.filename == "Piton zakaz 0000.xlsx"
+    assert result.filename == f"Piton zakaz {date.today().isoformat()} 0000.xlsx"
     workbook.close()
 
 
@@ -148,8 +150,8 @@ def test_repeated_export_uses_twenty_step_sequence(db_session: Session) -> None:
 
     first_workbook = openpyxl.load_workbook(BytesIO(first.content), data_only=True)
     second_workbook = openpyxl.load_workbook(BytesIO(second.content), data_only=True)
-    assert first.filename == "Piton zakaz 0000.xlsx"
-    assert second.filename == "Piton zakaz 0020.xlsx"
+    assert first.filename == f"Piton zakaz {date.today().isoformat()} 0000.xlsx"
+    assert second.filename == f"Piton zakaz {date.today().isoformat()} 0020.xlsx"
     assert first_workbook.active["B4"].value == "KA0000000000"
     assert second_workbook.active["B4"].value == "KA0000000020"
     first_workbook.close()
@@ -172,7 +174,7 @@ def test_export_sequence_counts_existing_export_events(db_session: Session) -> N
     result = ExportService(template_path=TEMPLATE_PATH).export_order(db_session, order.id)
 
     workbook = openpyxl.load_workbook(BytesIO(result.content), data_only=True)
-    assert result.filename == "Piton zakaz 0020.xlsx"
+    assert result.filename == f"Piton zakaz {date.today().isoformat()} 0020.xlsx"
     assert workbook.active["B4"].value == "KA0000000020"
     workbook.close()
 
@@ -195,8 +197,8 @@ def test_export_sequence_is_global_across_orders(db_session: Session) -> None:
 
     first_workbook = openpyxl.load_workbook(BytesIO(first.content), data_only=True)
     second_workbook = openpyxl.load_workbook(BytesIO(second.content), data_only=True)
-    assert first.filename == "Piton zakaz 0000.xlsx"
-    assert second.filename == "Piton zakaz 0020.xlsx"
+    assert first.filename == f"Piton zakaz {date.today().isoformat()} 0000.xlsx"
+    assert second.filename == f"Piton zakaz {date.today().isoformat()} 0020.xlsx"
     assert first_workbook.active["B4"].value == "KA0000000000"
     assert second_workbook.active["B4"].value == "KA0000000020"
     first_workbook.close()
@@ -364,6 +366,8 @@ def test_export_splits_workbook_by_product_type_and_adds_problem_sheet(db_sessio
     assert "nonfood" in workbook.sheetnames
     assert workbook["food"]["A6"].value == "ERP-100"
     assert workbook["nonfood"]["A6"].value == "ERP-NONFOOD"
+    assert workbook["food"]["B4"].value == "KA0000000000"
+    assert workbook["nonfood"]["B4"].value == "KA0000000001"
     assert workbook["Проблемные"]["B2"].value == "RAW-404"
     assert workbook["Проблемные"]["G2"].value == "Товар не сопоставлен"
     workbook.close()
@@ -492,6 +496,31 @@ def test_export_blocks_product_without_item_code(db_session: Session) -> None:
 
     with pytest.raises(ValueError, match="no exportable rows"):
         ExportService(template_path=TEMPLATE_PATH).export_order(db_session, order.id)
+
+
+def test_export_download_marker_tracks_each_variant(db_session: Session) -> None:
+    order = _resolved_order(db_session)
+    user = User(email="operator@example.com", hashed_password="hash", full_name="Operator One", role="operator")
+    db_session.add(user)
+    db_session.flush()
+
+    _mark_export_downloaded(order, "flint", user)
+    first_downloaded_at = order.export_downloaded_at
+    _mark_export_downloaded(order, "food", user)
+
+    assert first_downloaded_at is not None
+    assert set(order.export_downloads or {}) == {"flint", "food"}
+    assert order.export_downloads["flint"] == {
+        "downloaded_at": first_downloaded_at.isoformat(),
+        "user_id": user.id,
+        "user_name": "Operator One",
+    }
+    assert order.export_downloads["food"] == {
+        "downloaded_at": order.export_downloaded_at.isoformat(),
+        "user_id": user.id,
+        "user_name": "Operator One",
+    }
+    assert _export_download_info(order, "flint")["user_name"] == "Operator One"
 
 
 def _resolved_order(

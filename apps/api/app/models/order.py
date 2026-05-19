@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Index, JSON, Numeric, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, JSON, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.enums import OrderItemStatus, OrderStatus
@@ -25,6 +26,8 @@ class Order(Base, TimestampMixin, SoftDeleteMixin):
     uploaded_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
     source_file_id: Mapped[int | None] = mapped_column(ForeignKey("files.id"), index=True)
     export_file_id: Mapped[int | None] = mapped_column(ForeignKey("files.id"), index=True)
+    export_downloaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    export_downloads: Mapped[dict | None] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(32), default=OrderStatus.UPLOADED.value, index=True)
     error_message: Mapped[str | None] = mapped_column(Text)
     parsed_snapshot: Mapped[dict | None] = mapped_column(JSON)

@@ -21,6 +21,11 @@ type PreviewItem = {
   product_exclude_from_export: boolean;
 };
 
+type ExportDownloadInfo = {
+  downloaded_at?: string;
+  user_name?: string;
+};
+
 const orderStatusLabels: Record<string, string> = {
   uploaded: 'Загружен',
   processing: 'Обработка',
@@ -47,6 +52,7 @@ export function OrderPreviewPage() {
   const [newClientName, setNewClientName] = useState('');
   const [multiplierDrafts, setMultiplierDrafts] = useState<Record<number, string>>({});
   const [actionError, setActionError] = useState('');
+  const [downloadNotice, setDownloadNotice] = useState('');
   const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
   const autoResolvedClientId = useRef<number | null>(null);
   const downloadMenuRef = useRef<HTMLDivElement | null>(null);
@@ -93,9 +99,22 @@ export function OrderPreviewPage() {
     return () => document.removeEventListener('mousedown', closeDownloadMenu);
   }, []);
 
+  useEffect(() => {
+    if (!downloadNotice) return;
+    const timeoutId = window.setTimeout(() => setDownloadNotice(''), 4500);
+    return () => window.clearTimeout(timeoutId);
+  }, [downloadNotice]);
+
   async function downloadExport(productType?: string) {
     setActionError('');
     setDownloadMenuOpen(false);
+    const downloadKey = productType || '__full__';
+    const previousDownload = normalizeDownloadInfo(data?.order?.export_downloads?.[downloadKey]);
+    if (previousDownload) {
+      setDownloadNotice(
+        `Файл уже скачан${previousDownload.user_name ? `: ${previousDownload.user_name}` : ''}. Загрузка повторится.`,
+      );
+    }
     try {
       const response = await api.get(`/orders/${orderId}/download-export`, {
         params: productType ? { product_type: productType } : undefined,
@@ -103,6 +122,10 @@ export function OrderPreviewPage() {
       });
       const filename = filenameFromContentDisposition(response.headers['content-disposition'], `order-${orderId}.xlsx`);
       downloadBlob(response.data, filename);
+      const previouslyDownloadedBy = response.headers['x-export-previously-downloaded-by'];
+      if (previouslyDownloadedBy) {
+        setDownloadNotice(`Файл уже скачан: ${decodeURIComponent(previouslyDownloadedBy)}. Загрузка повторится.`);
+      }
       await queryClient.invalidateQueries({ queryKey: ['order-preview', orderId] });
     } catch (err: any) {
       setActionError(err.response?.data?.detail ?? 'Не удалось сформировать Excel');
@@ -175,13 +198,20 @@ export function OrderPreviewPage() {
   const clientResolved = Boolean(data.client);
   const readyToExport = order.status === 'ready_to_export';
   const exported = order.status === 'exported';
+  const exportDownloads = (order.export_downloads ?? {}) as Record<string, ExportDownloadInfo | string>;
   const failed = order.status === 'failed';
   const downloadable = clientResolved && exportable > 0 && !failed;
   const canOpenDownloadMenu = clientResolved && !failed && (downloadable || exportTypes.length > 0);
   const clientOptions = clients ?? [];
+  const fullExportDownload = normalizeDownloadInfo(exportDownloads.__full__);
 
   return (
     <main className="page space-y-6">
+      {downloadNotice && (
+        <div className="fixed right-5 top-20 z-50 max-w-sm rounded-md border border-amber-600 bg-amber-950/90 px-4 py-3 text-sm text-amber-100 shadow-lg">
+          {downloadNotice}
+        </div>
+      )}
       <section className="panel space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -217,22 +247,27 @@ export function OrderPreviewPage() {
                       type="button"
                       className="block w-full px-4 py-2 text-left text-sm text-slate-100 hover:bg-slate-800 disabled:cursor-not-allowed disabled:text-slate-500 disabled:hover:bg-transparent"
                       disabled={!downloadable}
+                      title={downloadTitle(fullExportDownload)}
                       onClick={() => downloadExport()}
                     >
-                      Полный Excel по страницам
+                      Полный Excel по страницам{fullExportDownload ? ' ✓' : ''}
                     </button>
                     {exportTypes.length > 0 && (
                       <div className="border-t border-slate-800 py-1">
-                        {exportTypes.map((productType) => (
-                          <button
-                            key={productType}
-                            type="button"
-                            className="block w-full px-4 py-2 text-left text-sm text-slate-100 hover:bg-slate-800"
-                            onClick={() => downloadExport(productType)}
-                          >
-                            Скачать только {productType}
-                          </button>
-                        ))}
+                        {exportTypes.map((productType) => {
+                          const downloadInfo = normalizeDownloadInfo(exportDownloads[productType]);
+                          return (
+                            <button
+                              key={productType}
+                              type="button"
+                              className="block w-full px-4 py-2 text-left text-sm text-slate-100 hover:bg-slate-800"
+                              title={downloadTitle(downloadInfo)}
+                              onClick={() => downloadExport(productType)}
+                            >
+                              Скачать только {productType}{downloadInfo ? ' ✓' : ''}
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -339,4 +374,18 @@ export function OrderPreviewPage() {
       </section>
     </main>
   );
+}
+
+function normalizeDownloadInfo(value: ExportDownloadInfo | string | undefined): ExportDownloadInfo | null {
+  if (!value) return null;
+  if (typeof value === 'string') return { downloaded_at: value };
+  return value;
+}
+
+function downloadTitle(downloadInfo: ExportDownloadInfo | null) {
+  if (!downloadInfo) return undefined;
+  const parts = ['Уже скачан'];
+  if (downloadInfo.user_name) parts.push(downloadInfo.user_name);
+  if (downloadInfo.downloaded_at) parts.push(new Date(downloadInfo.downloaded_at).toLocaleString());
+  return parts.join(' · ');
 }

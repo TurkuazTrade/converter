@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { PaginationControls } from '../components/PaginationControls';
@@ -13,6 +13,8 @@ type Order = {
   status: string;
   created_at: string;
   export_file_id?: number | null;
+  export_downloaded_at?: string | null;
+  export_downloads?: Record<string, string> | null;
 };
 
 const statusLabels: Record<string, string> = {
@@ -31,6 +33,7 @@ function statusClass(status: string) {
 }
 
 export function OrdersHistoryPage() {
+  const queryClient = useQueryClient();
   const [downloadError, setDownloadError] = useState('');
   const [page, setPage] = useState(0);
   const [limit, setLimit] = useState(50);
@@ -53,6 +56,7 @@ export function OrdersHistoryPage() {
       const response = await api.get(`/orders/${orderId}/download-export`, { responseType: 'blob' });
       const filename = filenameFromContentDisposition(response.headers['content-disposition'], `order-${orderId}.xlsx`);
       downloadBlob(response.data, filename);
+      await queryClient.invalidateQueries({ queryKey: ['orders'] });
     } catch (err: any) {
       setDownloadError(err.response?.data?.detail ?? 'Excel можно скачать только после сопоставления клиента и товаров.');
     }
@@ -103,6 +107,11 @@ export function OrdersHistoryPage() {
                       <button type="button" className="text-emerald-300 hover:text-emerald-200" onClick={() => downloadExport(order.id)}>
                         Excel
                       </button>
+                    )}
+                    {order.export_downloads && Object.keys(order.export_downloads).length > 0 && (
+                      <span className="text-xs text-emerald-300">
+                        есть скачанные виды
+                      </span>
                     )}
                   </td>
                 </tr>
