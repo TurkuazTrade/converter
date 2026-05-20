@@ -4,7 +4,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.enums import OrderItemStatus
@@ -229,13 +229,7 @@ class MatchingService:
                     conversion_multiplier=self._product_multiplier(mapped_by_item_code.product),
                 )
 
-            by_code = self.db.scalar(
-                select(Product).where(
-                    Product.item_code == item.raw_item_code,
-                    Product.deleted_at.is_(None),
-                    Product.is_active.is_(True),
-                )
-            )
+            by_code = self._single_product_by_item_code(item.raw_item_code)
             if by_code is not None:
                 return ProductMatch(product=by_code, conversion_multiplier=self._product_multiplier(by_code))
 
@@ -393,6 +387,36 @@ class MatchingService:
     @staticmethod
     def _trusted_barcode_condition():
         return or_(ProductBarcode.source.is_(None), ProductBarcode.source != "smoke")
+
+    def _single_product_by_item_code(self, item_code: str) -> Product | None:
+        normalized_item_code = normalize_text(item_code).casefold()
+        if not normalized_item_code:
+            return None
+
+        matches = [
+            product
+            for product in self.db.scalars(
+                select(Product).where(
+                    func.lower(Product.item_code) == normalized_item_code,
+                    Product.deleted_at.is_(None),
+                    Product.is_active.is_(True),
+                )
+            )
+            if normalize_text(product.item_code).casefold() == normalized_item_code
+        ]
+        if not matches:
+            matches = [
+                product
+                for product in self.db.scalars(
+                    select(Product).where(
+                        Product.item_code.is_not(None),
+                        Product.deleted_at.is_(None),
+                        Product.is_active.is_(True),
+                    )
+                )
+                if normalize_text(product.item_code).casefold() == normalized_item_code
+            ]
+        return matches[0] if len(matches) == 1 else None
 
     def save_client_mapping(self, order_id: int, client_id: int, user_id: int) -> None:
         order = self.db.get(Order, order_id)

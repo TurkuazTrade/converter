@@ -95,3 +95,40 @@ def test_product_repository_filters_product_type_case_insensitive(db_session: Se
     products = ProductRepository(db_session).list(product_type="Flint")
 
     assert [product.item_code for product in products] == ["ERP-1"]
+
+
+def test_product_repository_search_ignores_case_for_product_name(db_session: Session) -> None:
+    db_session.add_all(
+        [
+            Product(
+                item_code="ERP-1",
+                name="КОНФЕТЫ ШОКОЛАДНЫЕ",
+                is_active=True,
+            ),
+            Product(
+                item_code="ERP-2",
+                name="Печенье",
+                is_active=True,
+            ),
+        ]
+    )
+    db_session.flush()
+
+    products = ProductRepository(db_session).list(search="конфеты")
+
+    assert [product.item_code for product in products] == ["ERP-1"]
+
+
+def test_product_repository_search_ignores_case_for_item_code(db_session: Session) -> None:
+    db_session.add(
+        Product(
+            item_code="ERP-Case-1",
+            name="Product",
+            is_active=True,
+        )
+    )
+    db_session.flush()
+
+    products = ProductRepository(db_session).list(search="erp-case")
+
+    assert [product.item_code for product in products] == ["ERP-Case-1"]

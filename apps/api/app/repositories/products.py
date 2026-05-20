@@ -4,7 +4,7 @@ from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.product import Product, ProductBarcode
-from app.utils.normalization import normalize_product_type
+from app.utils.normalization import normalize_product_type, normalize_text
 
 
 class ProductRepository:
@@ -24,6 +24,24 @@ class ProductRepository:
         sort_by: str = "name",
         sort_dir: str = "asc",
     ) -> list[Product]:
+        if search:
+            stmt = self.filtered_query(
+                search="",
+                exclude_from_export=exclude_from_export,
+                is_active=is_active,
+                product_type=product_type,
+                brand=brand,
+                trade_mark=trade_mark,
+                sort_by=sort_by,
+                sort_dir=sort_dir,
+            )
+            products = [
+                product
+                for product in self.db.scalars(stmt).unique()
+                if self._matches_search(product, search)
+            ]
+            return products[offset : offset + limit]
+
         stmt = self.filtered_query(
             search=search,
             exclude_from_export=exclude_from_export,
@@ -96,3 +114,25 @@ class ProductRepository:
         if trade_mark:
             stmt = stmt.where(Product.trade_mark == trade_mark)
         return stmt
+
+    @staticmethod
+    def _matches_search(product: Product, search: str) -> bool:
+        needle = normalize_text(search).casefold()
+        if not needle:
+            return True
+
+        values = (
+            product.name,
+            product.item_code,
+            product.exchange_code,
+            product.article,
+            product.trade_mark,
+            product.brand,
+            product.product_type,
+        )
+        if any(needle in normalize_text(value).casefold() for value in values):
+            return True
+        return any(
+            barcode.deleted_at is None and needle in normalize_text(barcode.barcode).casefold()
+            for barcode in product.barcodes
+        )

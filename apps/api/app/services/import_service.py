@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import UploadFile
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.client import Client
@@ -513,8 +513,36 @@ class ImportService:
             if product is not None:
                 return product
         if item_code:
-            return self.db.scalar(select(Product).where(Product.item_code == item_code, Product.deleted_at.is_(None)))
+            return self._single_product_by_item_code(item_code)
         return None
+
+    def _single_product_by_item_code(self, item_code: str) -> Product | None:
+        normalized_item_code = normalize_text(item_code).casefold()
+        if not normalized_item_code:
+            return None
+
+        matches = [
+            product
+            for product in self.db.scalars(
+                select(Product).where(
+                    func.lower(Product.item_code) == normalized_item_code,
+                    Product.deleted_at.is_(None),
+                )
+            )
+            if normalize_text(product.item_code).casefold() == normalized_item_code
+        ]
+        if not matches:
+            matches = [
+                product
+                for product in self.db.scalars(
+                    select(Product).where(
+                        Product.item_code.is_not(None),
+                        Product.deleted_at.is_(None),
+                    )
+                )
+                if normalize_text(product.item_code).casefold() == normalized_item_code
+            ]
+        return matches[0] if len(matches) == 1 else None
 
     def _barcode_exists(self, product_id: int, barcode: str) -> bool:
         return (

@@ -50,6 +50,20 @@ def test_matching_ignores_smoke_barcode_and_uses_item_code(db_session: Session) 
     assert real_product.name == "Real source name"
 
 
+def test_matching_resolves_product_by_item_code_without_case_sensitivity(db_session: Session) -> None:
+    product = _product(db_session, item_code="ERP-Case-1", name="")
+    order, item = _order_with_item(db_session, barcode=None, raw_name="Case source name")
+    item.raw_item_code = "erp-case-1"
+    db_session.flush()
+
+    MatchingService(db_session).match_order(order.id)
+
+    assert item.product_id == product.id
+    assert item.item_code == "ERP-Case-1"
+    assert item.status == OrderItemStatus.RESOLVED.value
+    assert product.name == "Case source name"
+
+
 def test_asia_retail_short_numeric_item_code_is_skipped_on_rematch(db_session: Session) -> None:
     product = _product(db_session, item_code="ERP-SHOULD-NOT-MATCH", barcode="4607176441079")
     order, item = _order_with_item(db_session, barcode="4607176441079", raw_name="Short code row")
