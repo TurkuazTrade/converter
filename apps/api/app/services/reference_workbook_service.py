@@ -36,6 +36,23 @@ class ReferenceWorkbookService:
         "Адрес",
         "Сеть",
     ]
+    skipped_product_headers = [
+        "Причина",
+        "Лист",
+        "Строка",
+        "Номер товара",
+        "Штрихкод",
+        "Код сети",
+        "Наименование",
+        "Ценовой код",
+        "Код обмена",
+        "Артикул",
+        "Остаток",
+        "Торговая марка",
+        "Бренд",
+        "Тип",
+        "Коэффициент",
+    ]
 
     def build_products_workbook(self, products: Iterable[Product] = ()) -> bytes:
         workbook = self._new_workbook("convert", self.product_headers)
@@ -75,6 +92,31 @@ class ReferenceWorkbookService:
                     client.name_2,
                     client.address,
                     client.network_name,
+                ]
+            )
+        return self._save(workbook)
+
+    def build_skipped_products_workbook(self, rows: Iterable[dict]) -> bytes:
+        workbook = self._new_workbook("skipped", self.skipped_product_headers)
+        sheet = workbook.active
+        for row in rows:
+            sheet.append(
+                [
+                    row.get("reason"),
+                    row.get("sheet"),
+                    row.get("row_number"),
+                    row.get("item_code"),
+                    row.get("barcode"),
+                    row.get("raw_item_code"),
+                    row.get("name"),
+                    row.get("price_code"),
+                    row.get("exchange_code"),
+                    row.get("article"),
+                    row.get("stock"),
+                    row.get("trade_mark"),
+                    row.get("brand"),
+                    row.get("product_type"),
+                    row.get("conversion_quantity"),
                 ]
             )
         return self._save(workbook)

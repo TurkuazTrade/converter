@@ -11,6 +11,11 @@ type ImportSummary = {
   updated: number;
   skipped: number;
   mappings_inserted?: number;
+  skipped_file?: {
+    filename: string;
+    mime_type: string;
+    content_base64: string;
+  } | null;
 };
 
 type ReferenceImportModalProps = {
@@ -126,10 +131,26 @@ export function ReferenceImportModal({ kind, title, filledDownloadParams, onClos
 }
 
 function ImportSummaryCard({ summary }: { summary: ImportSummary }) {
+  function downloadSkippedRows() {
+    const file = summary.skipped_file;
+    if (!file) return;
+    const binary = window.atob(file.content_base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    downloadBlob(new Blob([bytes], { type: file.mime_type }), file.filename);
+  }
+
   return (
     <div className="rounded-md border border-slate-800 bg-slate-950 p-4">
       <div className="flex flex-wrap gap-2 text-sm">
         <span className="status-pill-ok">Импорт завершен</span>
+        {summary.skipped_file && (
+          <button type="button" className="button-secondary" onClick={downloadSkippedRows}>
+            Скачать пропущенные строки
+          </button>
+        )}
       </div>
       <div className="mt-3 grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
         <div>

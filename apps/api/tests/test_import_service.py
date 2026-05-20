@@ -264,6 +264,52 @@ async def test_import_products_reads_globys_convert_item_code_mapping(db_session
 
 
 @pytest.mark.asyncio
+async def test_import_products_allows_missing_item_code(db_session: Session) -> None:
+    upload = _upload_workbook(
+        "PRODUCTS.xlsx",
+        {
+            "convert": [
+                ["BARCODE", "Name", "Brand"],
+                ["5029053540108", "Мыло без номера", "DALAN"],
+            ],
+        },
+    )
+
+    result = await ImportService(db_session).import_products(upload)
+    db_session.flush()
+
+    product = db_session.scalar(select(Product).where(Product.name == "Мыло без номера"))
+    assert result["inserted"] == 1
+    assert result["skipped"] == 0
+    assert result["skipped_file"] is None
+    assert product is not None
+    assert product.item_code is None
+    assert product.brand == "DALAN"
+    assert db_session.scalar(select(ProductBarcode).where(ProductBarcode.barcode == "5029053540108")) is not None
+
+
+@pytest.mark.asyncio
+async def test_import_products_returns_skipped_rows_workbook(db_session: Session) -> None:
+    upload = _upload_workbook(
+        "PRODUCTS.xlsx",
+        {
+            "convert": [
+                ["SKU_NO", "BARCODE", "Name", "Brand"],
+                [None, None, None, "DALAN"],
+            ],
+        },
+    )
+
+    result = await ImportService(db_session).import_products(upload)
+
+    assert result["inserted"] == 0
+    assert result["skipped"] == 1
+    assert result["skipped_file"] is not None
+    assert result["skipped_file"]["filename"] == "PRODUCTS_skipped.xlsx"
+    assert result["skipped_file"]["content_base64"]
+
+
+@pytest.mark.asyncio
 async def test_import_clients_reads_piton_client_sheet_and_mapping(db_session: Session) -> None:
     upload = _upload_workbook(
         "PITON CONVERT.xlsx",
