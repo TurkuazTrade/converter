@@ -470,7 +470,14 @@ def _create_dictionary_item(
     )
     if existing is not None:
         raise HTTPException(status_code=409, detail="Dictionary item already exists")
-    item = model(name=name, normalized_name=normalized_name, is_active=payload.is_active)
+    item_kwargs = {
+        "name": name,
+        "normalized_name": normalized_name,
+        "is_active": payload.is_active,
+    }
+    if hasattr(model, "warehouse_no"):
+        item_kwargs["warehouse_no"] = normalize_text(payload.warehouse_no) or None
+    item = model(**item_kwargs)
     db.add(item)
     try:
         db.commit()
@@ -496,6 +503,7 @@ def _update_dictionary_item(
         ProductDictionaryService(db).update_dictionary_item(
             item,
             name=payload.name,
+            warehouse_no=payload.warehouse_no,
             is_active=payload.is_active,
             normalize_as_type=normalize_as_type,
         )

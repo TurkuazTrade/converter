@@ -314,6 +314,45 @@ body {
   @apply border-b px-3 py-2 align-top;
 }
 
+.products-table {
+  min-width: 1320px;
+  table-layout: fixed;
+}
+
+.products-table__name-col {
+  width: 260px;
+}
+
+.products-table__code-col,
+.products-table__text-col {
+  width: 140px;
+}
+
+.products-table__barcode-col {
+  width: 260px;
+}
+
+.products-table__stock-col,
+.products-table__small-col {
+  width: 100px;
+}
+
+.products-table__status-col {
+  width: 120px;
+}
+
+.products-table__actions-col {
+  width: 220px;
+}
+
+.products-table__cell-text {
+  @apply block truncate;
+}
+
+.products-table__barcode-text {
+  @apply cursor-help;
+}
+
 .status-pill {
   background: var(--app-surface-muted);
   border-color: var(--app-border);

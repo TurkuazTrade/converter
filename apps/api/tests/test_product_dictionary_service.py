@@ -52,3 +52,19 @@ def test_product_dictionary_service_renames_linked_products(db_session: Session)
 
     assert product.brand == "Brand B"
     assert product.product_type == "nonfood"
+
+
+def test_product_dictionary_service_updates_product_type_warehouse_no(db_session: Session) -> None:
+    product_type = ProductTypeCatalog(
+        name="food",
+        normalized_name="food",
+        warehouse_no=None,
+        is_active=True,
+    )
+    db_session.add(product_type)
+    db_session.flush()
+
+    ProductDictionaryService(db_session).update_dictionary_item(product_type, warehouse_no=" 12 ")
+    db_session.flush()
+
+    assert product_type.warehouse_no == "12"

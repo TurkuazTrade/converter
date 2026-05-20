@@ -13,7 +13,7 @@ from app.api.v1.orders import _export_download_info, _mark_export_downloaded
 from app.core.enums import OrderItemStatus, OrderStatus
 from app.models.client import Client
 from app.models.order import Order, OrderItem, ProcessingEvent
-from app.models.product import Product, ProductTypeExportRule
+from app.models.product import Product, ProductTypeCatalog, ProductTypeExportRule
 from app.models.user import User
 from app.services.export_service import ExportLine, ExportService, ResolvedOrderExport
 
@@ -55,7 +55,7 @@ def test_export_matches_template_contract() -> None:
     assert _cell_date(sheet["B2"].value) == date(2026, 5, 14)
     assert sheet["B2"].number_format == template_sheet["B2"].number_format
     assert sheet["A3"].value == "WH NO"
-    assert sheet["B3"].value == 1
+    assert sheet["B3"].value == 0
     assert sheet["A4"].value == "FICHE NO"
     assert sheet["B4"].value == "0000000001"
     assert sheet["C5"].value == "Unit"
@@ -71,8 +71,41 @@ def test_export_matches_template_contract() -> None:
     assert sheet["E6"].value is None
     assert sheet["A6"].border.left.style == template_sheet["A6"].border.left.style
     assert sheet["D6"].fill.fill_type == template_sheet["D6"].fill.fill_type
+    assert sheet.sheet_view.selection[0].activeCell == "A1"
+    assert sheet.sheet_view.selection[0].sqref == "A1"
     workbook.close()
     template.close()
+
+
+def test_export_writes_warehouse_no_when_present() -> None:
+    service = ExportService(template_path=TEMPLATE_PATH)
+    content = service.build_export_bytes(
+        ResolvedOrderExport(
+            converter_type="piton",
+            client_code="100245",
+            document_date=date(2026, 5, 14),
+            fiche_no="0000000001",
+            lines=[
+                ExportLine(item_code="201300090081421071130040", item_name="Test product", quantity=4),
+            ],
+            warehouse_no="12",
+        )
+    )
+
+    workbook = openpyxl.load_workbook(BytesIO(content), data_only=True)
+    assert workbook.active["B3"].value == 12
+    workbook.close()
+
+
+def test_export_order_uses_warehouse_no_from_snapshot(db_session: Session) -> None:
+    order = _resolved_order(db_session, warehouse_no="7")
+    db_session.flush()
+
+    result = ExportService(template_path=TEMPLATE_PATH).export_order(db_session, order.id)
+
+    workbook = openpyxl.load_workbook(BytesIO(result.content), data_only=True)
+    assert workbook.active["B3"].value == 7
+    workbook.close()
 
 
 def test_export_lines_are_sorted_by_item_code() -> None:
@@ -141,7 +174,7 @@ def test_export_order_uses_resolved_product_and_client(db_session: Session) -> N
     workbook.close()
 
 
-def test_repeated_export_uses_twenty_step_sequence(db_session: Session) -> None:
+def test_repeated_export_uses_next_global_fiche_sequence(db_session: Session) -> None:
     order = _resolved_order(db_session)
     db_session.flush()
 
@@ -151,9 +184,10 @@ def test_repeated_export_uses_twenty_step_sequence(db_session: Session) -> None:
     first_workbook = openpyxl.load_workbook(BytesIO(first.content), data_only=True)
     second_workbook = openpyxl.load_workbook(BytesIO(second.content), data_only=True)
     assert first.filename == f"Piton zakaz {date.today().isoformat()} 0000.xlsx"
-    assert second.filename == f"Piton zakaz {date.today().isoformat()} 0020.xlsx"
+    assert second.filename == f"Piton zakaz {date.today().isoformat()} 0005.xlsx"
     assert first_workbook.active["B4"].value == "KA0000000000"
-    assert second_workbook.active["B4"].value == "KA0000000020"
+    assert second_workbook.active["B4"].value == "KA0000000005"
+    assert (db_session.get(Order, order.id).events[-1].payload or {})["export_sequence_next"] == 10
     first_workbook.close()
     second_workbook.close()
 
@@ -174,8 +208,8 @@ def test_export_sequence_counts_existing_export_events(db_session: Session) -> N
     result = ExportService(template_path=TEMPLATE_PATH).export_order(db_session, order.id)
 
     workbook = openpyxl.load_workbook(BytesIO(result.content), data_only=True)
-    assert result.filename == f"Piton zakaz {date.today().isoformat()} 0020.xlsx"
-    assert workbook.active["B4"].value == "KA0000000020"
+    assert result.filename == f"Piton zakaz {date.today().isoformat()} 0050.xlsx"
+    assert workbook.active["B4"].value == "KA0000000050"
     workbook.close()
 
 
@@ -198,9 +232,68 @@ def test_export_sequence_is_global_across_orders(db_session: Session) -> None:
     first_workbook = openpyxl.load_workbook(BytesIO(first.content), data_only=True)
     second_workbook = openpyxl.load_workbook(BytesIO(second.content), data_only=True)
     assert first.filename == f"Piton zakaz {date.today().isoformat()} 0000.xlsx"
-    assert second.filename == f"Piton zakaz {date.today().isoformat()} 0020.xlsx"
+    assert second.filename == f"Piton zakaz {date.today().isoformat()} 0005.xlsx"
     assert first_workbook.active["B4"].value == "KA0000000000"
-    assert second_workbook.active["B4"].value == "KA0000000020"
+    assert second_workbook.active["B4"].value == "KA0000000005"
+    first_workbook.close()
+    second_workbook.close()
+
+
+def test_next_export_sequence_skips_all_blocks_from_previous_full_export(db_session: Session) -> None:
+    order = _resolved_order(db_session, product_type="food")
+    nonfood_product = Product(
+        item_code="ERP-NONFOOD",
+        name="Nonfood Product",
+        product_type="nonfood",
+        is_active=True,
+    )
+    kcc_product = Product(
+        item_code="ERP-KCC",
+        name="KCC Product",
+        product_type="kcc",
+        is_active=True,
+    )
+    db_session.add_all([nonfood_product, kcc_product])
+    db_session.flush()
+    order.items.extend(
+        [
+            OrderItem(
+                product_id=nonfood_product.id,
+                raw_barcode="4600000000001",
+                normalized_barcode="4600000000001",
+                raw_name="Nonfood Raw Product",
+                raw_item_code="RAW-NONFOOD",
+                item_code="RAW-NONFOOD",
+                quantity=Decimal("6"),
+                row_number=7,
+                status=OrderItemStatus.RESOLVED.value,
+            ),
+            OrderItem(
+                product_id=kcc_product.id,
+                raw_barcode="4600000000002",
+                normalized_barcode="4600000000002",
+                raw_name="KCC Raw Product",
+                raw_item_code="RAW-KCC",
+                item_code="RAW-KCC",
+                quantity=Decimal("7"),
+                row_number=8,
+                status=OrderItemStatus.RESOLVED.value,
+            ),
+        ]
+    )
+    db_session.flush()
+
+    first = ExportService(template_path=TEMPLATE_PATH).export_order(db_session, order.id)
+    second = ExportService(template_path=TEMPLATE_PATH).export_order(db_session, order.id)
+
+    first_workbook = openpyxl.load_workbook(BytesIO(first.content), data_only=True)
+    second_workbook = openpyxl.load_workbook(BytesIO(second.content), data_only=True)
+    assert first.filename == f"Piton zakaz {date.today().isoformat()} 0000.xlsx"
+    assert first_workbook["1"]["B4"].value == "KA0000000000"
+    assert first_workbook["1"]["B11"].value == "KA0000000005"
+    assert first_workbook["1"]["B18"].value == "KA0000000010"
+    assert second.filename == f"Piton zakaz {date.today().isoformat()} 0015.xlsx"
+    assert second_workbook["1"]["B4"].value == "KA0000000015"
     first_workbook.close()
     second_workbook.close()
 
@@ -320,12 +413,30 @@ def test_export_skips_products_with_excluded_product_type(db_session: Session) -
     workbook.close()
 
 
-def test_export_splits_workbook_by_product_type_and_adds_problem_sheet(db_session: Session) -> None:
+def test_export_stacks_product_type_blocks_on_one_sheet_and_adds_problem_sheet(db_session: Session) -> None:
     order = _resolved_order(db_session, product_type="food")
+    food_type = ProductTypeCatalog(
+        name="food",
+        normalized_name="food",
+        warehouse_no="1",
+        is_active=True,
+    )
+    nonfood_type = ProductTypeCatalog(
+        name="nonfood",
+        normalized_name="nonfood",
+        warehouse_no="5",
+        is_active=True,
+    )
+    db_session.add_all([food_type, nonfood_type])
+    db_session.flush()
+    food_product = db_session.get(Product, order.items[0].product_id)
+    assert food_product is not None
+    food_product.product_type_id = food_type.id
     nonfood_product = Product(
         item_code="ERP-NONFOOD",
         name="Nonfood Product",
         product_type="nonfood",
+        product_type_id=nonfood_type.id,
         is_active=True,
     )
     db_session.add(nonfood_product)
@@ -362,12 +473,15 @@ def test_export_splits_workbook_by_product_type_and_adds_problem_sheet(db_sessio
 
     workbook = openpyxl.load_workbook(BytesIO(result.content), data_only=True)
     assert workbook.sheetnames[-1] == "Проблемные"
-    assert "food" in workbook.sheetnames
-    assert "nonfood" in workbook.sheetnames
-    assert workbook["food"]["A6"].value == "ERP-100"
-    assert workbook["nonfood"]["A6"].value == "ERP-NONFOOD"
-    assert workbook["food"]["B4"].value == "KA0000000000"
-    assert workbook["nonfood"]["B4"].value == "KA0000000001"
+    assert workbook.sheetnames == ["1", "Проблемные"]
+    sheet = workbook["1"]
+    assert sheet["A6"].value == "ERP-100"
+    assert sheet["B3"].value == 1
+    assert sheet["B4"].value == "KA0000000000"
+    assert sheet["A7"].value is None
+    assert sheet["A13"].value == "ERP-NONFOOD"
+    assert sheet["B10"].value == 5
+    assert sheet["B11"].value == "KA0000000005"
     assert workbook["Проблемные"]["B2"].value == "RAW-404"
     assert workbook["Проблемные"]["G2"].value == "Товар не сопоставлен"
     workbook.close()
@@ -401,7 +515,7 @@ def test_export_moves_short_numeric_item_codes_to_problem_sheet(db_session: Sess
     result = ExportService(template_path=TEMPLATE_PATH).export_order(db_session, order.id)
 
     workbook = openpyxl.load_workbook(BytesIO(result.content), data_only=True)
-    assert workbook["food"]["A6"].value == "ERP-INCLUDED"
+    assert workbook["1"]["A6"].value == "ERP-INCLUDED"
     assert workbook["Проблемные"]["B2"].value == "RAW-100"
     assert workbook["Проблемные"]["G2"].value == "Короткий номер товара 3-4 знака"
     workbook.close()
@@ -419,8 +533,8 @@ def test_export_by_type_ignores_type_exclusion_rule(db_session: Session) -> None
     )
 
     workbook = openpyxl.load_workbook(BytesIO(result.content), data_only=True)
-    assert workbook.sheetnames == ["food"]
-    assert workbook["food"]["A6"].value == "ERP-100"
+    assert workbook.sheetnames == ["1"]
+    assert workbook["1"]["A6"].value == "ERP-100"
     workbook.close()
 
 
@@ -531,6 +645,7 @@ def _resolved_order(
     raw_barcode: str = "4600000000000",
     client_code: str = "100245",
     product_type: str | None = None,
+    warehouse_no: str | None = None,
 ) -> Order:
     client = Client(
         client_code=client_code,
@@ -553,7 +668,7 @@ def _resolved_order(
         converter_version="1.0.0",
         client_id=client.id,
         status=status,
-        parsed_snapshot={"document_date": "2026-05-14"},
+        parsed_snapshot={"document_date": "2026-05-14", "warehouse_no": warehouse_no},
     )
     order.items.append(
         OrderItem(

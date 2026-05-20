@@ -84,15 +84,18 @@ class ProductDictionaryRead(BaseModel):
 
     id: int
     name: str
+    warehouse_no: str | None = None
     is_active: bool
     created_at: datetime
 
 
 class ProductDictionaryCreate(BaseModel):
     name: str
+    warehouse_no: str | None = None
     is_active: bool = True
 
 
 class ProductDictionaryUpdate(BaseModel):
     name: str | None = None
+    warehouse_no: str | None = None
     is_active: bool | None = None

@@ -57,6 +57,7 @@ class ProductDictionaryService:
         item,
         *,
         name: str | None = None,
+        warehouse_no: str | None = None,
         is_active: bool | None = None,
         normalize_as_type: bool = False,
     ):
@@ -69,6 +70,8 @@ class ProductDictionaryService:
             self._sync_products_for_item(item, normalize_as_type=normalize_as_type)
         if is_active is not None:
             item.is_active = is_active
+        if warehouse_no is not None and hasattr(item, "warehouse_no"):
+            item.warehouse_no = normalize_text(warehouse_no) or None
         return item
 
     def _sync_products_for_item(self, item, *, normalize_as_type: bool) -> None:

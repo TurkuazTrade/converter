@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.enums import OrderItemStatus, OrderStatus
 from app.models.client import Client
-from app.models.mapping import ProductMapping
+from app.models.mapping import ClientMapping, ProductMapping
 from app.models.order import Order, OrderItem
 from app.models.product import Product, ProductBarcode
 from app.models.user import User
@@ -236,6 +237,92 @@ def test_matching_leaves_client_unresolved_when_name_matches_multiple_clients(
     MatchingService(db_session).match_client(order)
 
     assert order.client_id is None
+
+
+def test_matching_does_not_resolve_client_by_empty_mapping_address(db_session: Session) -> None:
+    client = Client(
+        client_code="120-04-1-02-8806",
+        name="ДОСТОР - 2 «Республиканская»",
+        normalized_name="достор2республиканская",
+        is_active=True,
+    )
+    db_session.add(client)
+    db_session.flush()
+    db_session.add(
+        ClientMapping(
+            converter_type="piton",
+            raw_client_name='ОсОО "Умай Групп", Достор 2 Республиканская',
+            normalized_client_name="осооумайгруппдостор2республиканская",
+            raw_address="",
+            normalized_address="",
+            client_id=client.id,
+            is_active=True,
+        )
+    )
+    order = Order(
+        converter_type="piton",
+        status=OrderStatus.PROCESSING.value,
+        parsed_snapshot={"client_hint": {"raw_name": 'ОсОО "Умай Групп", Магазин Тоголок-Молдо', "raw_address": ""}},
+    )
+    db_session.add(order)
+    db_session.flush()
+
+    MatchingService(db_session).match_client(order)
+
+    assert order.client_id is None
+
+
+def test_save_client_mapping_deactivates_conflicting_client_mapping(
+    db_session: Session,
+) -> None:
+    wrong_client = Client(
+        client_code="120-04-1-02-8806",
+        name="ДОСТОР - 2 «Республиканская»",
+        normalized_name="достор2республиканская",
+        is_active=True,
+    )
+    correct_client = Client(
+        client_code="120-04-1-02-8810",
+        name="ДОСТОР - Тоголок Молдо",
+        normalized_name="достортоголокмолдо",
+        is_active=True,
+    )
+    user = User(
+        email="client-map@example.com",
+        hashed_password="hash",
+        full_name="Client Mapper",
+        role="operator",
+        is_active=True,
+    )
+    db_session.add_all([wrong_client, correct_client, user])
+    db_session.flush()
+    old_mapping = ClientMapping(
+        converter_type="piton",
+        raw_client_name='ОсОО "Умай Групп", Магазин Тоголок-Молдо',
+        normalized_client_name="осооумайгруппмагазинтоголокмолдо",
+        client_id=wrong_client.id,
+        is_active=True,
+    )
+    order = Order(
+        converter_type="piton",
+        status=OrderStatus.PROCESSING.value,
+        parsed_snapshot={"client_hint": {"raw_name": 'ОсОО "Умай Групп", Магазин Тоголок-Молдо'}},
+    )
+    db_session.add_all([old_mapping, order])
+    db_session.flush()
+
+    MatchingService(db_session).save_client_mapping(order.id, correct_client.id, user.id)
+    MatchingService(db_session).match_client(order)
+
+    new_mapping = db_session.scalar(
+        select(ClientMapping).where(
+            ClientMapping.client_id == correct_client.id,
+            ClientMapping.normalized_client_name == "осооумайгруппмагазинтоголокмолдо",
+        )
+    )
+    assert old_mapping.is_active is False
+    assert new_mapping is not None
+    assert order.client_id == correct_client.id
 
 
 def test_backfill_product_names_from_order_items(db_session: Session) -> None:

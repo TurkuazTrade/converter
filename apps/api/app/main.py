@@ -91,6 +91,13 @@ def _ensure_development_columns() -> None:
             if table_name not in table_names:
                 Base.metadata.tables[table_name].create(bind=connection)
                 table_names.add(table_name)
+        product_type_columns = (
+            {column["name"] for column in inspector.get_columns("product_types")}
+            if "product_types" in inspector.get_table_names()
+            else set()
+        )
+        if "product_types" in inspector.get_table_names() and "warehouse_no" not in product_type_columns:
+            connection.execute(text("ALTER TABLE product_types ADD COLUMN warehouse_no VARCHAR(64)"))
         if "product_type_export_rules" not in table_names:
             Base.metadata.tables["product_type_export_rules"].create(bind=connection)
         if "product_type" in product_columns:

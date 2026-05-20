@@ -5,6 +5,7 @@ import { api } from '../api/client';
 type DictionaryItem = {
   id: number;
   name: string;
+  warehouse_no?: string | null;
   is_active: boolean;
   created_at: string;
 };
@@ -14,6 +15,7 @@ type DictionaryConfig = {
   title: string;
   endpoint: string;
   placeholder: string;
+  hasWarehouseNo?: boolean;
 };
 
 const dictionaries: DictionaryConfig[] = [
@@ -34,6 +36,7 @@ const dictionaries: DictionaryConfig[] = [
     title: 'Типы товаров',
     endpoint: '/products/catalog-types',
     placeholder: 'Новый тип',
+    hasWarehouseNo: true,
   },
 ];
 
@@ -69,9 +72,11 @@ export function ProductDictionariesPage() {
 function DictionaryPanel({ config }: { config: DictionaryConfig }) {
   const queryClient = useQueryClient();
   const [newName, setNewName] = useState('');
+  const [newWarehouseNo, setNewWarehouseNo] = useState('');
   const [newActive, setNewActive] = useState(true);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingName, setEditingName] = useState('');
+  const [editingWarehouseNo, setEditingWarehouseNo] = useState('');
   const [editingActive, setEditingActive] = useState(true);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -96,8 +101,13 @@ function DictionaryPanel({ config }: { config: DictionaryConfig }) {
     setSaving(true);
     setError('');
     try {
-      await api.post(config.endpoint, { name, is_active: newActive });
+      await api.post(config.endpoint, {
+        name,
+        ...(config.hasWarehouseNo ? { warehouse_no: newWarehouseNo.trim() } : {}),
+        is_active: newActive,
+      });
       setNewName('');
+      setNewWarehouseNo('');
       setNewActive(true);
       await refreshDictionaries();
     } catch (err: any) {
@@ -110,6 +120,7 @@ function DictionaryPanel({ config }: { config: DictionaryConfig }) {
   function startEdit(item: DictionaryItem) {
     setEditingId(item.id);
     setEditingName(item.name);
+    setEditingWarehouseNo(item.warehouse_no ?? '');
     setEditingActive(item.is_active);
     setError('');
   }
@@ -121,10 +132,12 @@ function DictionaryPanel({ config }: { config: DictionaryConfig }) {
     try {
       await api.patch(`${config.endpoint}/${editingId}`, {
         name: editingName.trim(),
+        ...(config.hasWarehouseNo ? { warehouse_no: editingWarehouseNo.trim() } : {}),
         is_active: editingActive,
       });
       setEditingId(null);
       setEditingName('');
+      setEditingWarehouseNo('');
       await refreshDictionaries();
     } catch (err: any) {
       setError(err.response?.data?.detail ?? 'Не удалось обновить значение');
@@ -147,6 +160,14 @@ function DictionaryPanel({ config }: { config: DictionaryConfig }) {
           value={newName}
           onChange={(event) => setNewName(event.target.value)}
         />
+        {config.hasWarehouseNo && (
+          <input
+            className="input w-full"
+            placeholder="Номер склада"
+            value={newWarehouseNo}
+            onChange={(event) => setNewWarehouseNo(event.target.value)}
+          />
+        )}
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-sm text-slate-300">
             <input
@@ -172,6 +193,7 @@ function DictionaryPanel({ config }: { config: DictionaryConfig }) {
             <thead>
               <tr>
                 <th>Название</th>
+                {config.hasWarehouseNo && <th>Склад</th>}
                 <th>Статус</th>
                 <th></th>
               </tr>
@@ -190,6 +212,19 @@ function DictionaryPanel({ config }: { config: DictionaryConfig }) {
                       item.name
                     )}
                   </td>
+                  {config.hasWarehouseNo && (
+                    <td>
+                      {editingId === item.id ? (
+                        <input
+                          className="input w-32"
+                          value={editingWarehouseNo}
+                          onChange={(event) => setEditingWarehouseNo(event.target.value)}
+                        />
+                      ) : (
+                        item.warehouse_no || <span className="text-slate-500">Не задан</span>
+                      )}
+                    </td>
+                  )}
                   <td>
                     {editingId === item.id ? (
                       <label className="flex items-center gap-2 text-sm text-slate-300">
@@ -212,7 +247,14 @@ function DictionaryPanel({ config }: { config: DictionaryConfig }) {
                         <button type="button" className="button" disabled={!editingName.trim() || saving} onClick={saveEdit}>
                           Сохранить
                         </button>
-                        <button type="button" className="button-secondary" onClick={() => setEditingId(null)}>
+                        <button
+                          type="button"
+                          className="button-secondary"
+                          onClick={() => {
+                            setEditingId(null);
+                            setEditingWarehouseNo('');
+                          }}
+                        >
                           Отмена
                         </button>
                       </div>
@@ -226,7 +268,7 @@ function DictionaryPanel({ config }: { config: DictionaryConfig }) {
               ))}
               {!items.length && (
                 <tr>
-                  <td className="text-slate-400" colSpan={3}>Пока пусто</td>
+                  <td className="text-slate-400" colSpan={config.hasWarehouseNo ? 4 : 3}>Пока пусто</td>
                 </tr>
               )}
             </tbody>

@@ -11,7 +11,8 @@ from pathlib import Path
 
 import openpyxl
 from openpyxl.styles import Font
-from sqlalchemy import func, select
+from openpyxl.utils.cell import coordinate_to_tuple, range_boundaries
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -29,6 +30,7 @@ class ExportLine:
     item_name: str | None
     quantity: float
     product_type: str | None = None
+    warehouse_no: str | int | None = None
     unit: int | float = 1
     unit_price: float | None = None
 
@@ -51,6 +53,7 @@ class ResolvedOrderExport:
     document_date: date
     fiche_no: str
     lines: list[ExportLine]
+    warehouse_no: str | int | None = None
     problems: list[ExportProblemLine] | None = None
     product_type_filter: str | None = None
     sequence_number: int = 0
@@ -67,6 +70,9 @@ class GeneratedExport:
 
 class ExportService:
     """Template-preserving export service."""
+
+    FICHE_SEQUENCE_STEP = 5
+    LEGACY_EXPORT_SEQUENCE_STRIDE = 50
 
     def __init__(
         self,
@@ -85,12 +91,15 @@ class ExportService:
         order = db.get(Order, order_id)
         if order is None:
             raise ValueError("Order not found.")
+        sequence_number = self._next_export_sequence_number(db)
         payload = self._payload_from_order(
             order,
-            sequence_number=self._next_export_sequence_number(db),
+            sequence_number=sequence_number,
             excluded_product_types=self._excluded_product_types(db),
             product_type_filter=product_type,
         )
+        export_sequence_count = self._export_sequence_count(payload)
+        export_sequence_next = sequence_number + export_sequence_count * self.FICHE_SEQUENCE_STEP
         content = self.build_export_bytes(payload)
         filename = self.build_filename(payload)
         result = GeneratedExport(
@@ -108,7 +117,15 @@ class ExportService:
                 order_id=order.id,
                 event_type=ProcessingEventType.EXPORTED.value,
                 message="Export workbook generated on demand.",
-                payload={"filename": result.filename, "size": result.size, "sha256": result.sha256},
+                payload={
+                    "filename": result.filename,
+                    "size": result.size,
+                    "sha256": result.sha256,
+                    "export_sequence_start": sequence_number,
+                    "export_sequence_count": export_sequence_count,
+                    "export_sequence_step": self.FICHE_SEQUENCE_STEP,
+                    "export_sequence_next": export_sequence_next,
+                },
                 created_by_id=user_id,
             )
         )
@@ -124,29 +141,12 @@ class ExportService:
                 lines_by_type[self._display_product_type(line.product_type)].append(line)
 
             grouped_lines = sorted(lines_by_type.items(), key=lambda item: item[0].casefold())
-            worksheets = []
-            keep_template_title = (
-                len(grouped_lines) == 1
-                and grouped_lines[0][0] == self._display_product_type(None)
-                and not order.product_type_filter
-            )
-            for index, (product_type, lines) in enumerate(grouped_lines):
-                worksheet = template_sheet if index == 0 else workbook.copy_worksheet(template_sheet)
-                if not (index == 0 and keep_template_title):
-                    existing_titles = [title for title in workbook.sheetnames if title != worksheet.title]
-                    worksheet.title = self._unique_sheet_title(existing_titles, product_type)
-                worksheets.append((worksheet, lines))
-
-            for index, (worksheet, lines) in enumerate(worksheets):
-                sheet_order = (
-                    replace(order, fiche_no=self._fiche_no_for_sequence(order.sequence_number + index))
-                    if len(worksheets) > 1
-                    else order
-                )
-                self._write_export_sheet(worksheet, layout, sheet_order, lines)
+            self._write_export_blocks_sheet(template_sheet, layout, order, grouped_lines)
 
             if order.problems:
                 self._write_problem_sheet(workbook, order.problems)
+
+            self._normalize_workbook_views(workbook)
 
             buffer = BytesIO()
             workbook.save(buffer)
@@ -246,6 +246,11 @@ class ExportService:
                     item_name=self._item_name_for_export(item, item_code),
                     quantity=float(item.quantity),
                     product_type=item.product.product_type,
+                    warehouse_no=(
+                        item.product.product_type_ref.warehouse_no
+                        if item.product.product_type_ref is not None
+                        else None
+                    ),
                 )
             )
 
@@ -259,6 +264,7 @@ class ExportService:
             document_date=document_date,
             fiche_no=self._fiche_no_for_sequence(sequence),
             lines=lines,
+            warehouse_no=self._warehouse_no_from_snapshot(order.parsed_snapshot),
             problems=problems,
             product_type_filter=product_type_filter,
             sequence_number=sequence,
@@ -266,16 +272,87 @@ class ExportService:
 
     @staticmethod
     def _next_export_sequence_number(db: Session) -> int:
-        export_count = db.scalar(
-            select(func.count(ProcessingEvent.id)).where(
-                ProcessingEvent.event_type == ProcessingEventType.EXPORTED.value,
+        events = list(
+            db.scalars(
+                select(ProcessingEvent).where(
+                    ProcessingEvent.event_type == ProcessingEventType.EXPORTED.value,
+                )
             )
         )
-        return int(export_count or 0) * 20
+        if not events:
+            return 0
+
+        candidates: list[int] = []
+        unknown_legacy_events = 0
+        for event in events:
+            payload = event.payload or {}
+            next_sequence = ExportService._int_payload_value(payload.get("export_sequence_next"))
+            if next_sequence is not None:
+                candidates.append(next_sequence)
+                continue
+            start_sequence = ExportService._int_payload_value(payload.get("export_sequence_start"))
+            sequence_count = ExportService._int_payload_value(payload.get("export_sequence_count")) or 1
+            sequence_step = ExportService._int_payload_value(payload.get("export_sequence_step")) or ExportService.FICHE_SEQUENCE_STEP
+            if start_sequence is not None:
+                candidates.append(start_sequence + sequence_count * sequence_step)
+                continue
+            filename_sequence = ExportService._sequence_from_filename(payload.get("filename"))
+            if filename_sequence is not None:
+                candidates.append(filename_sequence + ExportService.LEGACY_EXPORT_SEQUENCE_STRIDE)
+            else:
+                unknown_legacy_events += 1
+        if unknown_legacy_events:
+            candidates.append(unknown_legacy_events * ExportService.LEGACY_EXPORT_SEQUENCE_STRIDE)
+        return max(candidates)
 
     @staticmethod
     def _fiche_no_for_sequence(sequence: int) -> str:
         return f"KA{max(sequence, 0):010d}"
+
+    @staticmethod
+    def _int_payload_value(value: object) -> int | None:
+        try:
+            return int(value) if value not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _sequence_from_filename(value: object) -> int | None:
+        if not isinstance(value, str):
+            return None
+        match = re.search(r" (\d{4,})(?: [^.]*)?\.xlsx$", value)
+        return int(match.group(1)) if match else None
+
+    @staticmethod
+    def _export_sequence_count(order: ResolvedOrderExport) -> int:
+        product_types = {
+            ExportService._display_product_type(line.product_type).casefold()
+            for line in order.lines
+        }
+        return max(len(product_types), 1)
+
+    @staticmethod
+    def _warehouse_no_from_snapshot(snapshot: dict | None) -> str | None:
+        value = (snapshot or {}).get("warehouse_no")
+        return str(value).strip() if value not in (None, "") else None
+
+    @staticmethod
+    def _warehouse_no_for_export(value: str | int | None) -> str | int:
+        text = str(value).strip() if value is not None else ""
+        if not text:
+            return 0
+        return int(text) if text.isdigit() else text
+
+    @staticmethod
+    def _warehouse_no_for_product_type_block(
+        lines: list[ExportLine],
+        fallback: str | int | None,
+    ) -> str | int | None:
+        for line in lines:
+            text = str(line.warehouse_no).strip() if line.warehouse_no is not None else ""
+            if text:
+                return text
+        return fallback
 
     @staticmethod
     def _excluded_product_types(db: Session) -> set[str]:
@@ -300,15 +377,64 @@ class ExportService:
 
     @staticmethod
     def _write_export_sheet(worksheet, layout, order: ResolvedOrderExport, lines: list[ExportLine]) -> None:
-        worksheet[layout.service_cells["client_code"]] = order.client_code
-        worksheet[layout.service_cells["document_date"]] = order.document_date
-        if worksheet[layout.service_cells["document_date"]].number_format == "General":
-            worksheet[layout.service_cells["document_date"]].number_format = "dd/mm/yyyy"
-        worksheet[layout.service_cells["warehouse_no"]] = 1
-        worksheet[layout.service_cells["fiche_no"]] = order.fiche_no
+        block_height = ExportService._export_block_height(layout, lines)
+        ExportService._write_export_block(worksheet, layout, order, lines, 0, block_height)
 
-        start_row = layout.data_start_row
-        row_end = max(worksheet.max_row, start_row + len(lines) - 1)
+    @staticmethod
+    def _write_export_blocks_sheet(
+        worksheet,
+        layout,
+        order: ResolvedOrderExport,
+        grouped_lines: list[tuple[str, list[ExportLine]]],
+    ) -> None:
+        row_offset = 0
+        multiple_blocks = len(grouped_lines) > 1
+        for index, (_product_type, lines) in enumerate(grouped_lines):
+            block_height = ExportService._export_block_height(layout, lines)
+            if index > 0:
+                ExportService._copy_template_block(worksheet, block_height, row_offset + 1)
+            sheet_order = replace(
+                order,
+                fiche_no=(
+                    ExportService._fiche_no_for_sequence(order.sequence_number + index * ExportService.FICHE_SEQUENCE_STEP)
+                    if multiple_blocks
+                    else order.fiche_no
+                ),
+                warehouse_no=ExportService._warehouse_no_for_product_type_block(lines, order.warehouse_no),
+            )
+            ExportService._write_export_block(worksheet, layout, sheet_order, lines, row_offset, block_height)
+            row_offset += block_height + 1
+        final_used_row = max(row_offset - 1, 0)
+        if final_used_row and worksheet.max_row > final_used_row:
+            worksheet.delete_rows(final_used_row + 1, worksheet.max_row - final_used_row)
+
+    @staticmethod
+    def _export_block_height(layout, lines: list[ExportLine]) -> int:
+        return layout.data_start_row + max(len(lines), 1) - 1
+
+    @staticmethod
+    def _write_export_block(
+        worksheet,
+        layout,
+        order: ResolvedOrderExport,
+        lines: list[ExportLine],
+        row_offset: int,
+        block_height: int,
+    ) -> None:
+        client_code_cell = ExportService._offset_coordinate(layout.service_cells["client_code"], row_offset)
+        document_date_cell = ExportService._offset_coordinate(layout.service_cells["document_date"], row_offset)
+        warehouse_no_cell = ExportService._offset_coordinate(layout.service_cells["warehouse_no"], row_offset)
+        fiche_no_cell = ExportService._offset_coordinate(layout.service_cells["fiche_no"], row_offset)
+
+        worksheet[client_code_cell] = order.client_code
+        worksheet[document_date_cell] = order.document_date
+        if worksheet[document_date_cell].number_format == "General":
+            worksheet[document_date_cell].number_format = "dd/mm/yyyy"
+        worksheet[warehouse_no_cell] = ExportService._warehouse_no_for_export(order.warehouse_no)
+        worksheet[fiche_no_cell] = order.fiche_no
+
+        start_row = layout.data_start_row + row_offset
+        row_end = row_offset + block_height
         template_styles = {
             col: copy(worksheet.cell(start_row, col)._style)
             for col in layout.data_style_columns
@@ -336,6 +462,44 @@ class ExportService:
             worksheet.cell(row, layout.quantity_col).value = line.quantity
             if layout.unit_price_col is not None and line.unit_price is not None:
                 worksheet.cell(row, layout.unit_price_col).value = line.unit_price
+
+    @staticmethod
+    def _copy_template_block(worksheet, row_count: int, target_start_row: int) -> None:
+        for row in range(1, row_count + 1):
+            target_row = target_start_row + row - 1
+            source_dim = worksheet.row_dimensions[row]
+            target_dim = worksheet.row_dimensions[target_row]
+            target_dim.height = source_dim.height
+            target_dim.hidden = source_dim.hidden
+            for col in range(1, worksheet.max_column + 1):
+                source = worksheet.cell(row, col)
+                target = worksheet.cell(target_row, col)
+                target.value = source.value
+                if source.has_style:
+                    target._style = copy(source._style)
+                target.number_format = source.number_format
+                target.font = copy(source.font)
+                target.fill = copy(source.fill)
+                target.border = copy(source.border)
+                target.alignment = copy(source.alignment)
+                target.protection = copy(source.protection)
+
+        for merged_range in list(worksheet.merged_cells.ranges):
+            min_col, min_row, max_col, max_row = range_boundaries(str(merged_range))
+            if min_row < 1 or max_row > row_count:
+                continue
+            row_delta = target_start_row - 1
+            worksheet.merge_cells(
+                start_row=min_row + row_delta,
+                start_column=min_col,
+                end_row=max_row + row_delta,
+                end_column=max_col,
+            )
+
+    @staticmethod
+    def _offset_coordinate(coordinate: str, row_offset: int) -> str:
+        row, column = coordinate_to_tuple(coordinate)
+        return f"{openpyxl.utils.get_column_letter(column)}{row + row_offset}"
 
     @staticmethod
     def _write_problem_sheet(workbook, problems: list[ExportProblemLine]) -> None:
@@ -368,6 +532,13 @@ class ExportService:
         for index, width in enumerate(widths, start=1):
             worksheet.column_dimensions[openpyxl.utils.get_column_letter(index)].width = width
         worksheet.freeze_panes = "A2"
+
+    @staticmethod
+    def _normalize_workbook_views(workbook) -> None:
+        for worksheet in workbook.worksheets:
+            for selection in worksheet.sheet_view.selection:
+                selection.activeCell = "A1"
+                selection.sqref = "A1"
 
     @staticmethod
     def _problem_line(item: OrderItem, reason: str) -> ExportProblemLine:

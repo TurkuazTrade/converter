@@ -48,6 +48,7 @@ export function OrderPreviewPage() {
   const queryClient = useQueryClient();
   const [clientSearch, setClientSearch] = useState('');
   const [clientId, setClientId] = useState('');
+  const [editingClient, setEditingClient] = useState(false);
   const [newClientCode, setNewClientCode] = useState('');
   const [newClientName, setNewClientName] = useState('');
   const [multiplierDrafts, setMultiplierDrafts] = useState<Record<number, string>>({});
@@ -64,7 +65,7 @@ export function OrderPreviewPage() {
   const { data: clients } = useQuery({
     queryKey: ['client-search', clientSearch || data?.client_hint?.raw_name || ''],
     queryFn: async () => (await api.get('/clients', { params: { search: clientSearch || data?.client_hint?.raw_name || '', limit: 20 } })).data,
-    enabled: !data?.client && (clientSearch || data?.client_hint?.raw_name || '').length >= 2,
+    enabled: (!data?.client || editingClient) && (clientSearch || data?.client_hint?.raw_name || '').length >= 2,
   });
   const onlyClient = !data?.client && clients?.length === 1 ? clients[0] : null;
 
@@ -137,6 +138,7 @@ export function OrderPreviewPage() {
     setActionError('');
     await api.post(`/orders/${orderId}/resolve-client`, { client_id: Number(clientId) });
     setClientId('');
+    setEditingClient(false);
     await queryClient.invalidateQueries({ queryKey: ['order-preview', orderId] });
   }
 
@@ -151,6 +153,7 @@ export function OrderPreviewPage() {
       });
       await api.post(`/orders/${orderId}/resolve-client`, { client_id: response.data.id });
       setClientId('');
+      setEditingClient(false);
       await queryClient.invalidateQueries({ queryKey: ['order-preview', orderId] });
     } catch (err: any) {
       setActionError(err.response?.data?.detail ?? 'Не удалось создать клиента');
@@ -204,6 +207,14 @@ export function OrderPreviewPage() {
   const canOpenDownloadMenu = clientResolved && !failed && (downloadable || exportTypes.length > 0);
   const clientOptions = clients ?? [];
   const fullExportDownload = normalizeDownloadInfo(exportDownloads.__full__);
+  const clientEditorOpen = !clientResolved || editingClient;
+
+  function openClientEditor() {
+    setEditingClient(true);
+    setClientId('');
+    setClientSearch(data?.client_hint?.raw_name || data?.client?.name || '');
+    setNewClientName(data?.client_hint?.raw_name || '');
+  }
 
   return (
     <main className="page space-y-6">
@@ -228,6 +239,11 @@ export function OrderPreviewPage() {
             <p className="mt-3 text-sm text-slate-400">
               Клиент: {clientResolved ? `${data.client.client_code} · ${data.client.name}` : data.client_hint?.raw_name || 'не определен'}
             </p>
+            {clientResolved && (
+              <button type="button" className="mt-2 text-sm text-sky-300 hover:text-sky-200" onClick={openClientEditor}>
+                Изменить клиента
+              </button>
+            )}
             {order.error_message && <p className="mt-2 text-sm text-amber-300">{order.error_message}</p>}
           </div>
           <div className="flex flex-wrap gap-2">
@@ -250,7 +266,7 @@ export function OrderPreviewPage() {
                       title={downloadTitle(fullExportDownload)}
                       onClick={() => downloadExport()}
                     >
-                      Полный Excel по страницам{fullExportDownload ? ' ✓' : ''}
+                      Полный Excel{fullExportDownload ? ' ✓' : ''}
                     </button>
                     {exportTypes.length > 0 && (
                       <div className="border-t border-slate-800 py-1">
@@ -281,8 +297,16 @@ export function OrderPreviewPage() {
             {data.warnings.slice(0, 5).map((warning: string) => <div key={warning}>{warning}</div>)}
           </div>
         )}
-        {!clientResolved && (
+        {clientEditorOpen && (
           <div className="space-y-4 rounded-md border border-amber-700 bg-amber-950/30 p-4">
+            {clientResolved && (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-amber-100">Выберите правильного клиента для этой заявки.</p>
+                <button type="button" className="button-ghost" onClick={() => setEditingClient(false)}>
+                  Отмена
+                </button>
+              </div>
+            )}
             <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
               <input
                 className="input"
@@ -298,7 +322,9 @@ export function OrderPreviewPage() {
                   </option>
                 ))}
               </select>
-              <button type="button" className="button" disabled={!clientId} onClick={resolveClient}>Сохранить клиента</button>
+              <button type="button" className="button" disabled={!clientId} onClick={resolveClient}>
+                {clientResolved ? 'Заменить клиента' : 'Сохранить клиента'}
+              </button>
             </div>
             {clientOptions.length === 0 && (
               <div className="grid gap-3 border-t border-amber-800 pt-4 md:grid-cols-[180px_1fr_auto]">

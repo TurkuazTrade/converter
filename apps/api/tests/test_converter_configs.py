@@ -36,6 +36,7 @@ def test_asia_retail_one_c_export_format_parses(tmp_path) -> None:
             "Вид документа",
             "Дата",
             "Номер",
+            "Склад",
             "Код обмена контрагент",
             "Контрагент",
             "Подразделение",
@@ -54,6 +55,7 @@ def test_asia_retail_one_c_export_format_parses(tmp_path) -> None:
             "Заявки",
             "15.05.2026",
             "ЦБ00309246",
+            "12",
             "",
             'ЗАО "Азия Ритейл"',
             "Гипермаркет 12",
@@ -74,6 +76,8 @@ def test_asia_retail_one_c_export_format_parses(tmp_path) -> None:
     parsed = ConverterRegistryService().get_converter("asia_retail").parse(path)
 
     assert parsed.document_no == "ЦБ00309246"
+    assert parsed.warehouse_no == "12"
+    assert parsed.snapshot()["warehouse_no"] == "12"
     assert parsed.client_hint.raw_name == "Гипермаркет 12"
     assert parsed.client_hint.client_code == "120-04-1-03-8812"
     assert len(parsed.items) == 1

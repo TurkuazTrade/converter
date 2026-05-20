@@ -4,6 +4,7 @@
   "sheet": {"strategy": "first_matching", "name_aliases": ["TDSheet", "Order"]},
   "header": {"strategy": "aliases", "search_rows": 20, "required": ["barcode", "item_name", "quantity"]},
   "columns": {
+    "warehouse_no": ["WH NO", "Warehouse", "Склад", "Номер склада", "Код склада"],
     "item_code": ["Код", "Код товара"],
     "item_name": ["Продукция", "Товар", "Наименование"],
     "barcode": ["Штрихкод", "Штрих-код"],

@@ -379,7 +379,22 @@ export function ProductsPage() {
         {isLoading ? (
           <p className="p-5 text-slate-400">Загрузка...</p>
         ) : (
-          <table className="table">
+          <table className="table products-table">
+            <colgroup>
+              <col className="products-table__name-col" />
+              <col className="products-table__code-col" />
+              <col className="products-table__code-col" />
+              <col className="products-table__barcode-col" />
+              <col className="products-table__code-col" />
+              <col className="products-table__stock-col" />
+              <col className="products-table__text-col" />
+              <col className="products-table__text-col" />
+              <col className="products-table__text-col" />
+              <col className="products-table__small-col" />
+              <col className="products-table__status-col" />
+              <col className="products-table__small-col" />
+              <col className="products-table__actions-col" />
+            </colgroup>
             <thead>
               <tr>
                 <th>Наименование</th>
@@ -400,10 +415,12 @@ export function ProductsPage() {
             <tbody>
               {products.map((product: any) => (
                 <tr key={product.id}>
-                  <td>{displayProductName(product)}</td>
+                  <td>
+                    <span className="products-table__cell-text">{displayProductName(product)}</span>
+                  </td>
                   <td>{product.item_code}</td>
                   <td>{product.exchange_code}</td>
-                  <td>{(product.barcodes ?? []).map((barcode: any) => barcode.barcode).join(', ')}</td>
+                  <td>{formatBarcodeList(product)}</td>
                   <td>{product.article}</td>
                   <td>{product.stock}</td>
                   <td>{product.trade_mark}</td>
@@ -555,6 +572,16 @@ function displayProductName(product: any) {
     return <span className="text-slate-500">Название не задано</span>;
   }
   return name;
+}
+
+function formatBarcodeList(product: any) {
+  const value = (product.barcodes ?? []).map((barcode: any) => barcode.barcode).join(', ');
+  if (!value) return null;
+  return (
+    <span className="products-table__cell-text products-table__barcode-text" title={value}>
+      {value}
+    </span>
+  );
 }
 
 function formatMultiplier(value: unknown) {

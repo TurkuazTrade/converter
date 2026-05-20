@@ -32,6 +32,7 @@ class ParsedItem:
 class ParsedOrder:
     document_no: str | None
     document_date: date | None
+    warehouse_no: str | None
     sheet_name: str
     header_row: int | None
     client_hint: ParsedClientHint
@@ -43,6 +44,7 @@ class ParsedOrder:
         return {
             "document_no": self.document_no,
             "document_date": self.document_date.isoformat() if self.document_date else None,
+            "warehouse_no": self.warehouse_no,
             "sheet": self.sheet_name,
             "header_row": self.header_row,
             "client_hint": asdict(self.client_hint),
