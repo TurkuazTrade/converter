@@ -10,6 +10,6 @@
     "barcode": ["Штрих-код", "Штрихкод"],
     "quantity": ["Заказ/шт", "Заказ шт", "Заказ"]
   },
-  "metadata": {"client_text_prefix": "Заказ на"},
+  "metadata": {"client_text_prefix": "Заказ на", "document_no_strategy": "filename"},
   "filters": {"skip_zero_quantity": true}
 }

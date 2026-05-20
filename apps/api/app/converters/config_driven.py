@@ -170,6 +170,8 @@ class ConfigDrivenConverter(BaseConverter):
         first_data: tuple[int, list[Any]] | None,
         path: Path,
     ) -> str:
+        if self.config.get("metadata", {}).get("document_no_strategy") == "filename":
+            return path.stem
         row = first_data[1] if first_data else None
         from_column = normalize_text(self._cell(row, match.columns.get("document_no")))
         if from_column:
@@ -240,7 +242,11 @@ class ConfigDrivenConverter(BaseConverter):
 
         return ParsedClientHint(
             raw_name=client_name,
-            raw_address=self._first_match(r"Адрес(?: доставки)?:\s*(.+?)(?:\s+тел|\s+График|\s*$)", text, ""),
+            raw_address=self._first_match(
+                r"Адрес(?: доставки)?:\s*(.+?)(?:\s+тел|\s+График|\s+ID\s+Штрих|\s*$)",
+                text,
+                "",
+            ),
             client_code=client_code,
             payload={"source": "config_driven"},
         )

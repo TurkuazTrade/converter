@@ -51,6 +51,7 @@ class ConverterRegistryService:
             "dostor": ConverterType.DOSTOR,
             "азия": ConverterType.ASIA_RETAIL,
             "asia": ConverterType.ASIA_RETAIL,
+            "заказ/шт": ConverterType.DARKSTORE,
             "dark": ConverterType.DARKSTORE,
             "даркстор": ConverterType.DARKSTORE,
             "алма": ConverterType.ALMA,

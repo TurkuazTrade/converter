@@ -154,6 +154,59 @@ def test_asia_retail_skips_short_numeric_item_codes(tmp_path) -> None:
     assert parsed.items[0].raw_name == "VALID ITEM"
 
 
+def test_darkstore_email_format_uses_filename_as_document_no(tmp_path) -> None:
+    workbook = openpyxl.Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Лист1"
+    worksheet["C1"] = "Заказ на Алма Весна"
+    worksheet["C2"] = "Адрес: Джаманбаева 8/2"
+    worksheet.append([])
+    worksheet.append(["ID", "Штрих-код", "Наименование", "Заказ/шт"])
+    worksheet.append([10318913, "4870254131401", "Арахис соленый Big Bob 170гр", 5])
+    worksheet.append([10326707, "5029053541648", "Бумага туалетная", 0])
+    path = tmp_path / "Алма Весна почта.xlsx"
+    workbook.save(path)
+    workbook.close()
+
+    parsed = ConverterRegistryService().get_converter("darkstore").parse(path)
+
+    assert parsed.document_no == "Алма Весна почта"
+    assert parsed.client_hint.raw_name == "Алма Весна"
+    assert parsed.client_hint.raw_address == "Джаманбаева 8/2"
+    assert len(parsed.items) == 1
+    assert parsed.items[0].raw_item_code == "10318913"
+    assert parsed.items[0].normalized_barcode == "4870254131401"
+    assert parsed.items[0].quantity == 5
+
+
+def test_alma_named_darkstore_email_format_autodetects_darkstore(tmp_path, db_session) -> None:
+    workbook = openpyxl.Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Лист1"
+    worksheet["C1"] = "Заказ на Алма ГУМ"
+    worksheet["C2"] = "Адрес: Чуй 92"
+    worksheet.append([])
+    worksheet.append(["ID", "Штрих-код", "Наименование", "Заказ/шт"])
+    worksheet.append([10323232, "4605496001584", "Вермишель Роллтон", 10])
+    path = tmp_path / "Алма ГУМ.xlsx"
+    workbook.save(path)
+    workbook.close()
+
+    detected = OrderProcessingService(db_session)._detect_converter(
+        StoredObject(
+            original_name="Алма ГУМ.xlsx",
+            stored_name="Алма ГУМ.xlsx",
+            path=str(path),
+            mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            size=path.stat().st_size,
+            sha256="test",
+            file_role=FileRole.SOURCE,
+        )
+    )
+
+    assert detected == "darkstore"
+
+
 def test_autodetect_uses_workbook_content_for_ambiguous_filename(tmp_path, db_session) -> None:
     workbook = openpyxl.Workbook()
     worksheet = workbook.active
