@@ -18,6 +18,7 @@ from app.repositories.orders import OrderRepository
 from app.schemas.order import OrderDetail, OrderRead, UploadOrderResponse
 from app.services.export_service import ExportService
 from app.services.matching_service import MatchingService
+from app.services.reference_workbook_service import ReferenceWorkbookService
 from app.services.reprocess_service import ReprocessService
 from app.services.storage_service import LocalStorageService
 
@@ -362,6 +363,25 @@ def download_export(
         content=result.content,
         media_type=result.mime_type,
         headers=headers,
+    )
+
+
+@router.get("/templates/import")
+def order_import_template(
+    current_user: Annotated[User, Depends(get_current_user)],
+    converter_type: str | None = None,
+) -> Response:
+    service = ReferenceWorkbookService()
+    selected_converter = converter_type or "asia_retail"
+    try:
+        content = service.build_order_template(selected_converter)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Converter template not found") from exc
+    filename = f"order_template_{selected_converter}.xlsx"
+    return Response(
+        content=content,
+        media_type=service.mime_type,
+        headers={"Content-Disposition": _attachment_header(filename)},
     )
 
 

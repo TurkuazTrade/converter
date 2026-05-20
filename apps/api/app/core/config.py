@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     backend_cors_origins: list[str] = Field(
         default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"]
     )
+    backend_cors_origin_regex: str | None = r"https://.*\.ngrok-free\.dev"
     storage_root: Path = Path("../../data/storage")
     template_path: Path = Path("../../data/templates/template_zakaz.xlsx")
     retain_source_files: bool = False

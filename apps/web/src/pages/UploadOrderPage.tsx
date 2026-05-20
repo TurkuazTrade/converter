@@ -1,17 +1,31 @@
 import { ChangeEvent, DragEvent, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import { downloadBlob, filenameFromContentDisposition } from '../shared/download';
 import { converters } from '../shared/converters';
+
+type ProductTypeRule = {
+  product_type: string;
+  exclude_from_export: boolean;
+};
 
 export function UploadOrderPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
   const [converterType, setConverterType] = useState('');
   const [force, setForce] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [typeSettingsOpen, setTypeSettingsOpen] = useState(false);
+  const [typeMessage, setTypeMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const { data: productTypes = [] } = useQuery<ProductTypeRule[]>({
+    queryKey: ['product-types'],
+    queryFn: async () => (await api.get('/products/types')).data,
+  });
 
   async function upload() {
     if (!file) return;
@@ -50,6 +64,35 @@ export function UploadOrderPage() {
   function onDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
     setFile(event.dataTransfer.files?.[0] ?? null);
+  }
+
+  async function toggleTypeExportExclusion(typeRule: ProductTypeRule) {
+    setTypeMessage('');
+    try {
+      await api.patch('/products/types/export-exclusion', {
+        product_type: typeRule.product_type,
+        exclude_from_export: !typeRule.exclude_from_export,
+      });
+      await queryClient.invalidateQueries({ queryKey: ['product-types'] });
+      setTypeMessage('Настройка типа обновлена.');
+    } catch (err: any) {
+      setTypeMessage(err.response?.data?.detail ?? 'Не удалось обновить тип товара');
+    }
+  }
+
+  async function downloadOrderTemplate() {
+    setError('');
+    try {
+      const response = await api.get('/orders/templates/import', {
+        params: converterType ? { converter_type: converterType } : undefined,
+        responseType: 'blob',
+      });
+      const fallback = `order_template_${converterType || 'asia_retail'}.xlsx`;
+      const filename = filenameFromContentDisposition(response.headers['content-disposition'], fallback);
+      downloadBlob(response.data, filename);
+    } catch (err: any) {
+      setError(err.response?.data?.detail ?? 'Не удалось скачать шаблон заказа');
+    }
   }
 
   return (
@@ -95,10 +138,52 @@ export function UploadOrderPage() {
 
         {error && <p className="text-sm text-red-400">{error}</p>}
         {message && <p className="text-sm text-amber-300">{message}</p>}
-        <button type="button" className="button w-fit" onClick={upload} disabled={!file || loading}>
-          {loading ? 'Обработка...' : 'Загрузить заказ'}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="button" onClick={upload} disabled={!file || loading}>
+            {loading ? 'Обработка...' : 'Загрузить заказ'}
+          </button>
+        </div>
       </section>
+      {productTypes.length > 0 && (
+        <section className="compact-panel space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold">Исключение типов из финального Excel</h2>
+              <p className="mt-1 text-sm text-slate-400">{excludedTypeCount(productTypes)} отмечено</p>
+            </div>
+            <button type="button" className="button-ghost" onClick={() => setTypeSettingsOpen((value) => !value)}>
+              {typeSettingsOpen ? 'Скрыть' : 'Открыть'}
+            </button>
+          </div>
+          {typeSettingsOpen && (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-slate-400">Отмеченные типы не попадут в итоговую выгрузку.</p>
+                <button type="button" className="button-secondary" onClick={downloadOrderTemplate}>
+                  Скачать шаблон заказа
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                {productTypes.map((typeRule) => (
+                  <label key={typeRule.product_type} className="flex items-center gap-2 text-sm text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={typeRule.exclude_from_export}
+                      onChange={() => toggleTypeExportExclusion(typeRule)}
+                    />
+                    {typeRule.product_type}
+                  </label>
+                ))}
+              </div>
+              {typeMessage && <p className="text-sm text-slate-400">{typeMessage}</p>}
+            </>
+          )}
+        </section>
+      )}
     </main>
   );
+}
+
+function excludedTypeCount(productTypes: ProductTypeRule[]) {
+  return productTypes.filter((typeRule) => typeRule.exclude_from_export).length;
 }

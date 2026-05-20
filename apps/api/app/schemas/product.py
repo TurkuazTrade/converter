@@ -16,8 +16,11 @@ class ProductRead(BaseModel):
     article: str | None
     stock: str | None
     trade_mark: str | None
+    trade_mark_id: int | None
     brand: str | None
+    brand_id: int | None
     product_type: str | None
+    product_type_id: int | None
     conversion_multiplier: float
     exclude_from_export: bool
     is_active: bool
@@ -74,3 +77,22 @@ class ProductTypeExportRuleRead(BaseModel):
 class ProductTypeExportRuleUpdate(BaseModel):
     product_type: str
     exclude_from_export: bool
+
+
+class ProductDictionaryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    is_active: bool
+    created_at: datetime
+
+
+class ProductDictionaryCreate(BaseModel):
+    name: str
+    is_active: bool = True
+
+
+class ProductDictionaryUpdate(BaseModel):
+    name: str | None = None
+    is_active: bool | None = None

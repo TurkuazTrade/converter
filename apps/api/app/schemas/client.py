@@ -10,7 +10,6 @@ class ClientRead(BaseModel):
 
     id: int
     client_code: str | None
-    client_code_2: str | None
     name: str
     name_2: str | None
     address: str | None
@@ -21,7 +20,6 @@ class ClientRead(BaseModel):
 
 class ClientCreate(BaseModel):
     client_code: str
-    client_code_2: str | None = None
     name: str
     name_2: str | None = None
     address: str | None = None
@@ -30,7 +28,6 @@ class ClientCreate(BaseModel):
 
 class ClientUpdate(BaseModel):
     client_code: str | None = None
-    client_code_2: str | None = None
     name: str | None = None
     name_2: str | None = None
     address: str | None = None

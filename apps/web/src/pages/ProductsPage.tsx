@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { FormModal } from '../components/FormModal';
 import { PaginationControls } from '../components/PaginationControls';
+import { ReferenceImportModal } from '../components/ReferenceImportModal';
 
 type ProductForm = {
   id?: number;
@@ -19,11 +20,6 @@ type ProductForm = {
   conversion_multiplier: string;
   exclude_from_export: boolean;
   is_active: boolean;
-};
-
-type ProductTypeRule = {
-  product_type: string;
-  exclude_from_export: boolean;
 };
 
 type ProductFilterOptions = {
@@ -63,6 +59,15 @@ const emptyProductForm: ProductForm = {
 
 export function ProductsPage() {
   const queryClient = useQueryClient();
+  const tableScrollRef = useRef<HTMLElement | null>(null);
+  const dragScrollRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    scrollLeft: number;
+    scrollTop: number;
+    dragged: boolean;
+  } | null>(null);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [limit, setLimit] = useState(50);
@@ -75,12 +80,10 @@ export function ProductsPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [form, setForm] = useState<ProductForm>(emptyProductForm);
   const [formOpen, setFormOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [formError, setFormError] = useState('');
-  const [backfillLoading, setBackfillLoading] = useState(false);
-  const [backfillMessage, setBackfillMessage] = useState('');
-  const [typeMessage, setTypeMessage] = useState('');
-  const [typeSettingsOpen, setTypeSettingsOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [tableDragging, setTableDragging] = useState(false);
   const { data, isLoading } = useQuery({
     queryKey: [
       'products',
@@ -98,16 +101,9 @@ export function ProductsPage() {
     queryFn: async () => (
       await api.get('/products', {
         params: {
-          search,
+          ...productQueryParams,
           limit,
           offset: page * limit,
-          sort_by: sortBy,
-          sort_dir: sortDir,
-          ...(exportFilter !== 'all' ? { exclude_from_export: exportFilter === 'excluded' } : {}),
-          ...(activeFilter !== 'all' ? { is_active: activeFilter === 'active' } : {}),
-          ...(productTypeFilter ? { product_type: productTypeFilter } : {}),
-          ...(brandFilter ? { brand: brandFilter } : {}),
-          ...(tradeMarkFilter ? { trade_mark: tradeMarkFilter } : {}),
         },
       })
     ).data,
@@ -117,11 +113,16 @@ export function ProductsPage() {
     queryKey: ['product-filter-options'],
     queryFn: async () => (await api.get('/products/filter-options')).data,
   });
-  const { data: productTypes = [] } = useQuery<ProductTypeRule[]>({
-    queryKey: ['product-types'],
-    queryFn: async () => (await api.get('/products/types')).data,
-  });
-
+  const productQueryParams = {
+    search,
+    sort_by: sortBy,
+    sort_dir: sortDir,
+    ...(exportFilter !== 'all' ? { exclude_from_export: exportFilter === 'excluded' } : {}),
+    ...(activeFilter !== 'all' ? { is_active: activeFilter === 'active' } : {}),
+    ...(productTypeFilter ? { product_type: productTypeFilter } : {}),
+    ...(brandFilter ? { brand: brandFilter } : {}),
+    ...(tradeMarkFilter ? { trade_mark: tradeMarkFilter } : {}),
+  };
   function updateSearch(value: string) {
     setSearch(value);
     setPage(0);
@@ -211,25 +212,12 @@ export function ProductsPage() {
         await api.post('/products', payload);
       }
       closeForm();
-      await queryClient.invalidateQueries({ queryKey: ['products'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['products'] }),
+        queryClient.invalidateQueries({ queryKey: ['product-filter-options'] }),
+      ]);
     } catch (err: any) {
       setFormError(err.response?.data?.detail ?? 'Не удалось сохранить товар');
-    }
-  }
-
-  async function backfillNamesFromOrders() {
-    setBackfillLoading(true);
-    setBackfillMessage('');
-    try {
-      const response = await api.post('/products/backfill-names');
-      const updated = Number(response.data?.updated ?? 0);
-      const scanned = Number(response.data?.scanned ?? 0);
-      setBackfillMessage(`Заполнено названий: ${updated}. Проверено строк заказов: ${scanned}.`);
-      await queryClient.invalidateQueries({ queryKey: ['products'] });
-    } catch (err: any) {
-      setBackfillMessage(err.response?.data?.detail ?? 'Не удалось заполнить названия из заказов');
-    } finally {
-      setBackfillLoading(false);
     }
   }
 
@@ -240,22 +228,49 @@ export function ProductsPage() {
       });
       await queryClient.invalidateQueries({ queryKey: ['products'] });
     } catch (err: any) {
-      setBackfillMessage(err.response?.data?.detail ?? 'Не удалось обновить исключение из Excel');
+      setFormError(err.response?.data?.detail ?? 'Не удалось обновить исключение из Excel');
     }
   }
 
-  async function toggleTypeExportExclusion(typeRule: ProductTypeRule) {
-    setTypeMessage('');
-    try {
-      await api.patch('/products/types/export-exclusion', {
-        product_type: typeRule.product_type,
-        exclude_from_export: !typeRule.exclude_from_export,
-      });
-      await queryClient.invalidateQueries({ queryKey: ['product-types'] });
-      setTypeMessage('Настройка типа обновлена.');
-    } catch (err: any) {
-      setTypeMessage(err.response?.data?.detail ?? 'Не удалось обновить тип товара');
+  function startTableDrag(event: React.PointerEvent<HTMLElement>) {
+    if (event.button !== 0 || isInteractiveTarget(event.target)) return;
+    const container = tableScrollRef.current;
+    if (!container) return;
+    dragScrollRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      scrollLeft: container.scrollLeft,
+      scrollTop: container.scrollTop,
+      dragged: false,
+    };
+    container.setPointerCapture(event.pointerId);
+  }
+
+  function moveTableDrag(event: React.PointerEvent<HTMLElement>) {
+    const drag = dragScrollRef.current;
+    const container = tableScrollRef.current;
+    if (!drag || !container || drag.pointerId !== event.pointerId) return;
+    const deltaX = event.clientX - drag.startX;
+    const deltaY = event.clientY - drag.startY;
+    if (!drag.dragged && Math.hypot(deltaX, deltaY) > 4) {
+      drag.dragged = true;
+      setTableDragging(true);
     }
+    if (!drag.dragged) return;
+    event.preventDefault();
+    container.scrollLeft = drag.scrollLeft - deltaX;
+    container.scrollTop = drag.scrollTop - deltaY;
+  }
+
+  function stopTableDrag(event: React.PointerEvent<HTMLElement>) {
+    const drag = dragScrollRef.current;
+    const container = tableScrollRef.current;
+    if (drag?.pointerId === event.pointerId && container?.hasPointerCapture(event.pointerId)) {
+      container.releasePointerCapture(event.pointerId);
+    }
+    dragScrollRef.current = null;
+    setTableDragging(false);
   }
 
   return (
@@ -266,8 +281,8 @@ export function ProductsPage() {
           <p className="mt-1 text-sm text-slate-400">Справочник для сопоставления заказов.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" className="button-secondary" disabled={backfillLoading} onClick={backfillNamesFromOrders}>
-            {backfillLoading ? 'Заполняем...' : 'Заполнить из заказов'}
+          <button type="button" className="button-secondary" onClick={() => setImportOpen(true)}>
+            Импорт товаров
           </button>
           <button type="button" className="button" onClick={openCreateProduct}>Добавить товар</button>
         </div>
@@ -334,38 +349,7 @@ export function ProductsPage() {
           </div>
         </section>
       )}
-      {backfillMessage && <p className="text-sm text-slate-400">{backfillMessage}</p>}
-      {productTypes.length > 0 && (
-        <section className="compact-panel space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold">Исключение типов из финального Excel</h2>
-              <p className="mt-1 text-sm text-slate-400">{excludedTypeCount(productTypes)} отмечено</p>
-            </div>
-            <button type="button" className="button-ghost" onClick={() => setTypeSettingsOpen((value) => !value)}>
-              {typeSettingsOpen ? 'Скрыть' : 'Открыть'}
-            </button>
-          </div>
-          {typeSettingsOpen && (
-            <>
-              <p className="text-sm text-slate-400">Отмеченные типы не попадут в итоговую выгрузку.</p>
-              <div className="flex flex-wrap gap-3">
-                {productTypes.map((typeRule) => (
-                  <label key={typeRule.product_type} className="flex items-center gap-2 text-sm text-slate-300">
-                    <input
-                      type="checkbox"
-                      checked={typeRule.exclude_from_export}
-                      onChange={() => toggleTypeExportExclusion(typeRule)}
-                    />
-                    {typeRule.product_type}
-                  </label>
-                ))}
-              </div>
-              {typeMessage && <p className="text-sm text-slate-400">{typeMessage}</p>}
-            </>
-          )}
-        </section>
-      )}
+      {formError && !formOpen && <p className="text-sm text-red-400">{formError}</p>}
       <PaginationControls
         page={page}
         limit={limit}
@@ -384,7 +368,14 @@ export function ProductsPage() {
           </button>
         )}
       />
-      <section className="panel overflow-auto p-0">
+      <section
+        ref={tableScrollRef}
+        className={`panel overflow-auto p-0 ${tableDragging ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
+        onPointerDown={startTableDrag}
+        onPointerMove={moveTableDrag}
+        onPointerUp={stopTableDrag}
+        onPointerCancel={stopTableDrag}
+      >
         {isLoading ? (
           <p className="p-5 text-slate-400">Загрузка...</p>
         ) : (
@@ -461,6 +452,15 @@ export function ProductsPage() {
             </>
           )}
         >
+          <datalist id="product-trade-mark-options">
+            {(filterOptions?.trade_marks ?? []).map((value) => <option key={value} value={value} />)}
+          </datalist>
+          <datalist id="product-brand-options">
+            {(filterOptions?.brands ?? []).map((value) => <option key={value} value={value} />)}
+          </datalist>
+          <datalist id="product-type-options">
+            {(filterOptions?.product_types ?? []).map((value) => <option key={value} value={value} />)}
+          </datalist>
           <div className="grid gap-3 md:grid-cols-2">
             <label className="space-y-2">
               <span className="text-sm text-slate-400">Номер товара</span>
@@ -488,15 +488,15 @@ export function ProductsPage() {
             </label>
             <label className="space-y-2">
               <span className="text-sm text-slate-400">Торговая марка</span>
-              <input className="input w-full" value={form.trade_mark} onChange={(event) => setForm((prev) => ({ ...prev, trade_mark: event.target.value }))} />
+              <input className="input w-full" list="product-trade-mark-options" value={form.trade_mark} onChange={(event) => setForm((prev) => ({ ...prev, trade_mark: event.target.value }))} />
             </label>
             <label className="space-y-2">
               <span className="text-sm text-slate-400">Бренд</span>
-              <input className="input w-full" value={form.brand} onChange={(event) => setForm((prev) => ({ ...prev, brand: event.target.value }))} />
+              <input className="input w-full" list="product-brand-options" value={form.brand} onChange={(event) => setForm((prev) => ({ ...prev, brand: event.target.value }))} />
             </label>
             <label className="space-y-2">
               <span className="text-sm text-slate-400">Тип</span>
-              <input className="input w-full" value={form.product_type} onChange={(event) => setForm((prev) => ({ ...prev, product_type: event.target.value }))} />
+              <input className="input w-full" list="product-type-options" value={form.product_type} onChange={(event) => setForm((prev) => ({ ...prev, product_type: event.target.value }))} />
             </label>
             <label className="space-y-2">
               <span className="text-sm text-slate-400">Множитель</span>
@@ -516,12 +516,16 @@ export function ProductsPage() {
           </div>
         </FormModal>
       )}
+      {importOpen && (
+        <ReferenceImportModal
+          kind="products"
+          title="Импорт товаров"
+          filledDownloadParams={productQueryParams}
+          onClose={() => setImportOpen(false)}
+        />
+      )}
     </main>
   );
-}
-
-function excludedTypeCount(productTypes: ProductTypeRule[]) {
-  return productTypes.filter((typeRule) => typeRule.exclude_from_export).length;
 }
 
 function activeFilterCount(filters: {
@@ -557,4 +561,8 @@ function formatMultiplier(value: unknown) {
   const numberValue = Number(value ?? 1);
   if (!Number.isFinite(numberValue)) return '1';
   return numberValue.toLocaleString(undefined, { maximumFractionDigits: 3 });
+}
+
+function isInteractiveTarget(target: EventTarget) {
+  return target instanceof HTMLElement && Boolean(target.closest('button, input, select, textarea, a, label'));
 }

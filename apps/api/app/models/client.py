@@ -15,7 +15,6 @@ class Client(Base, TimestampMixin, SoftDeleteMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     client_code: Mapped[str | None] = mapped_column(String(128), index=True)
-    client_code_2: Mapped[str | None] = mapped_column(String(128), index=True)
     name: Mapped[str] = mapped_column(String(512), index=True, nullable=False)
     name_2: Mapped[str | None] = mapped_column(String(512), index=True)
     normalized_name: Mapped[str] = mapped_column(String(512), index=True, nullable=False)

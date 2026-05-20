@@ -4,8 +4,8 @@ import { ClientsPage } from '../pages/ClientsPage';
 import { LoginPage } from '../pages/LoginPage';
 import { OrderPreviewPage } from '../pages/OrderPreviewPage';
 import { OrdersHistoryPage } from '../pages/OrdersHistoryPage';
+import { ProductDictionariesPage } from '../pages/ProductDictionariesPage';
 import { ProductsPage } from '../pages/ProductsPage';
-import { ReferenceImportPage } from '../pages/ReferenceImportPage';
 import { ReportsPlaceholderPage } from '../pages/ReportsPlaceholderPage';
 import { UnresolvedItemsPage } from '../pages/UnresolvedItemsPage';
 import { UploadOrderPage } from '../pages/UploadOrderPage';
@@ -48,12 +48,16 @@ function Layout() {
         <div className="flex min-w-0 items-center gap-4">
           <button
             aria-label={sidebarHidden ? 'Показать боковое меню' : 'Скрыть боковое меню'}
-            className="header-action hidden md:inline-flex"
+            className="sidebar-toggle hidden md:inline-flex"
             title={sidebarHidden ? 'Показать меню' : 'Скрыть меню'}
             type="button"
             onClick={() => setSidebarHidden((value) => !value)}
           >
-            <span aria-hidden="true">{sidebarHidden ? 'Меню' : 'Скрыть'}</span>
+            <span className="sidebar-toggle-icon" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
           </button>
           <Link to="/upload" className="brand-lockup">
             <span className="brand-mark" aria-hidden="true">T</span>
@@ -97,9 +101,9 @@ function Layout() {
             <details open>
               <summary className="sidebar-summary">Справочники</summary>
               <nav className="mt-2 space-y-1">
+                <NavLink to="/product-dictionaries" className={navClass}>Бренды и типы</NavLink>
                 <NavLink to="/products" className={navClass}>Товары</NavLink>
                 <NavLink to="/clients" className={navClass}>Клиенты</NavLink>
-                <NavLink to="/references" className={navClass}>Импорт</NavLink>
               </nav>
             </details>
           </div>
@@ -128,11 +132,12 @@ function Layout() {
           <Routes>
             <Route path="/" element={<Navigate to="/upload" replace />} />
             <Route path="/upload" element={<UploadOrderPage />} />
-            <Route path="/references" element={<ReferenceImportPage />} />
+            <Route path="/references" element={<Navigate to="/products" replace />} />
             <Route path="/orders" element={<OrdersHistoryPage />} />
             <Route path="/orders/:orderId/preview" element={<OrderPreviewPage />} />
             <Route path="/orders/:orderId/unresolved" element={<UnresolvedItemsPage />} />
             <Route path="/products" element={<ProductsPage />} />
+            <Route path="/product-dictionaries" element={<ProductDictionariesPage />} />
             <Route path="/clients" element={<ClientsPage />} />
             <Route path="/reports/:reportType" element={<ReportsPlaceholderPage />} />
           </Routes>

@@ -13,6 +13,7 @@ from app.models.client import Client
 from app.models.mapping import ClientMapping, ProductMapping
 from app.models.product import Product, ProductBarcode
 from app.services.converter_registry_service import ConverterRegistryService
+from app.services.product_dictionary_service import ProductDictionaryService
 from app.utils.excel_reader import read_workbook
 from app.utils.normalization import (
     normalize_barcode,
@@ -70,6 +71,7 @@ class ImportService:
     def _import_products_from_path(self, path: Path, detected_converter: str | None) -> dict:
         rows = self._rows_from_excel(path, preferred_sheets=("convert",), kind="products")
         inserted = updated = skipped = mappings_inserted = 0
+        dictionary_service = ProductDictionaryService(self.db)
         seen_mappings: set[tuple[str, str, str, int]] = set()
         seen_barcodes: set[tuple[int, str]] = set()
         for row in rows:
@@ -100,6 +102,7 @@ class ImportService:
                     is_active=True,
                 )
                 self.db.add(product)
+                dictionary_service.sync_product(product)
                 self.db.flush()
                 inserted += 1
             else:
@@ -110,6 +113,7 @@ class ImportService:
                 product.conversion_multiplier = conversion_multiplier
                 self._apply_catalog_fields(product, catalog_fields)
                 product.is_active = True
+                dictionary_service.sync_product(product)
                 updated += 1
             barcode_key = (product.id, barcode) if barcode else None
             if barcode_key and barcode_key not in seen_barcodes and not self._barcode_exists(product.id, barcode):
@@ -150,7 +154,6 @@ class ImportService:
         seen_mappings: set[tuple[str, str, int]] = set()
         for row in rows:
             client_code = normalize_item_code(row.get("client_code"))
-            client_code_2 = normalize_item_code(row.get("client_code_2"))
             name = normalize_text(row.get("name"))
             raw_client_name = normalize_text(row.get("raw_client_name"))
             name_2 = self._secondary_client_name(name, row.get("name_2"), raw_client_name)
@@ -168,7 +171,6 @@ class ImportService:
             if client is None:
                 client = Client(
                     client_code=client_code,
-                    client_code_2=client_code_2,
                     name=name or client_code or "Unknown client",
                     name_2=name_2,
                     normalized_name=normalize_key(name or client_code),
@@ -182,7 +184,6 @@ class ImportService:
                 inserted += 1
             else:
                 client.client_code = client.client_code or client_code
-                client.client_code_2 = client_code_2 or client.client_code_2
                 client.name = name or client.name
                 client.name_2 = name_2 or client.name_2
                 client.normalized_name = normalize_key(client.name)
@@ -313,7 +314,6 @@ class ImportService:
             "product_type": {"тип", "type", "producttype", "категория"},
             "conversion_quantity": {"convquantity", "conversionquantity", "коэффициент"},
             "client_code": {"кодклиентапанорама", "кодклиента", "clientcode", "код"},
-            "client_code_2": {"кодклиента2", "clientcode2"},
             "raw_client_name": {"названиеклиентапитон", "rawclientname", "networkclientname"},
             "name_2": {
                 "название2",

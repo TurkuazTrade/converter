@@ -24,6 +24,29 @@ class ProductRepository:
         sort_by: str = "name",
         sort_dir: str = "asc",
     ) -> list[Product]:
+        stmt = self.filtered_query(
+            search=search,
+            exclude_from_export=exclude_from_export,
+            is_active=is_active,
+            product_type=product_type,
+            brand=brand,
+            trade_mark=trade_mark,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+        ).offset(offset).limit(limit)
+        return list(self.db.scalars(stmt))
+
+    @staticmethod
+    def filtered_query(
+        search: str = "",
+        exclude_from_export: bool | None = None,
+        is_active: bool | None = None,
+        product_type: str = "",
+        brand: str = "",
+        trade_mark: str = "",
+        sort_by: str = "name",
+        sort_dir: str = "asc",
+    ):
         sort_columns = {
             "name": Product.name,
             "item_code": Product.item_code,
@@ -45,8 +68,6 @@ class ProductRepository:
             .options(selectinload(Product.barcodes))
             .where(Product.deleted_at.is_(None))
             .order_by(sort_expression, Product.id.asc())
-            .offset(offset)
-            .limit(limit)
         )
         if search:
             pattern = f"%{search}%"
@@ -74,4 +95,4 @@ class ProductRepository:
             stmt = stmt.where(Product.brand == brand)
         if trade_mark:
             stmt = stmt.where(Product.trade_mark == trade_mark)
-        return list(self.db.scalars(stmt))
+        return stmt

@@ -208,27 +208,6 @@ def test_matching_resolves_client_by_normalized_second_name(db_session: Session)
     assert order.client_id == client.id
 
 
-def test_matching_resolves_client_by_file_client_code_2(db_session: Session) -> None:
-    client = Client(
-        client_code="PANORAMA-001",
-        client_code_2="120-04-1-03-8812",
-        name="Азия Ритейл-12",
-        normalized_name="азияритейл12",
-        is_active=True,
-    )
-    order = Order(
-        converter_type="asia_retail",
-        status=OrderStatus.PROCESSING.value,
-        parsed_snapshot={"client_hint": {"raw_name": "Гипермаркет 12", "client_code": "120-04-1-03-8812"}},
-    )
-    db_session.add_all([client, order])
-    db_session.flush()
-
-    MatchingService(db_session).match_client(order)
-
-    assert order.client_id == client.id
-
-
 def test_matching_leaves_client_unresolved_when_name_matches_multiple_clients(
     db_session: Session,
 ) -> None:

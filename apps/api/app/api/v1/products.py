@@ -2,19 +2,24 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps import get_current_user
 from app.db.session import get_db
-from app.models.product import Product, ProductBarcode, ProductTypeExportRule
+from app.models.product import Product, ProductBarcode, ProductBrand, ProductTradeMark, ProductTypeCatalog, ProductTypeExportRule
 from app.models.user import User
 from app.repositories.products import ProductRepository
 from app.schemas.product import (
     ProductCreate,
+    ProductDictionaryCreate,
+    ProductDictionaryRead,
+    ProductDictionaryUpdate,
     ProductRead,
     ProductTypeExportRuleRead,
     ProductTypeExportRuleUpdate,
@@ -22,6 +27,8 @@ from app.schemas.product import (
 )
 from app.services.import_service import ImportService
 from app.services.matching_service import MatchingService
+from app.services.product_dictionary_service import ProductDictionaryService
+from app.services.reference_workbook_service import ReferenceWorkbookService
 from app.utils.normalization import normalize_barcode, normalize_item_code, normalize_product_type, normalize_text
 
 router = APIRouter()
@@ -70,6 +77,11 @@ def list_product_types(
         )
         if (normalized := normalize_product_type(value))
     }
+    product_types.update(
+        value
+        for value in _list_dictionary_names(db, ProductTypeCatalog, normalize_as_type=True)
+        if value
+    )
     rules: dict[str, bool] = {}
     for rule in db.scalars(select(ProductTypeExportRule)):
         normalized = normalize_product_type(rule.product_type)
@@ -101,10 +113,91 @@ def product_filter_options(
         return sorted(values.values(), key=lambda value: value.casefold())
 
     return {
-        "product_types": distinct_values(Product.product_type),
-        "brands": distinct_values(Product.brand),
-        "trade_marks": distinct_values(Product.trade_mark),
+        "product_types": _merged_dictionary_values(db, ProductTypeCatalog, distinct_values(Product.product_type)),
+        "brands": _merged_dictionary_values(db, ProductBrand, distinct_values(Product.brand)),
+        "trade_marks": _merged_dictionary_values(db, ProductTradeMark, distinct_values(Product.trade_mark)),
     }
+
+
+@router.get("/brands", response_model=list[ProductDictionaryRead])
+def list_brands(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> list[ProductDictionaryRead]:
+    return _list_dictionary(db, ProductBrand)
+
+
+@router.post("/brands", response_model=ProductDictionaryRead)
+def create_brand(
+    payload: ProductDictionaryCreate,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ProductDictionaryRead:
+    return _create_dictionary_item(db, ProductBrand, payload)
+
+
+@router.patch("/brands/{item_id}", response_model=ProductDictionaryRead)
+def update_brand(
+    item_id: int,
+    payload: ProductDictionaryUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ProductDictionaryRead:
+    return _update_dictionary_item(db, ProductBrand, item_id, payload)
+
+
+@router.get("/trade-marks", response_model=list[ProductDictionaryRead])
+def list_trade_marks(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> list[ProductDictionaryRead]:
+    return _list_dictionary(db, ProductTradeMark)
+
+
+@router.post("/trade-marks", response_model=ProductDictionaryRead)
+def create_trade_mark(
+    payload: ProductDictionaryCreate,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ProductDictionaryRead:
+    return _create_dictionary_item(db, ProductTradeMark, payload)
+
+
+@router.patch("/trade-marks/{item_id}", response_model=ProductDictionaryRead)
+def update_trade_mark(
+    item_id: int,
+    payload: ProductDictionaryUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ProductDictionaryRead:
+    return _update_dictionary_item(db, ProductTradeMark, item_id, payload)
+
+
+@router.get("/catalog-types", response_model=list[ProductDictionaryRead])
+def list_catalog_types(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> list[ProductDictionaryRead]:
+    return _list_dictionary(db, ProductTypeCatalog)
+
+
+@router.post("/catalog-types", response_model=ProductDictionaryRead)
+def create_catalog_type(
+    payload: ProductDictionaryCreate,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ProductDictionaryRead:
+    return _create_dictionary_item(db, ProductTypeCatalog, payload, normalize_as_type=True)
+
+
+@router.patch("/catalog-types/{item_id}", response_model=ProductDictionaryRead)
+def update_catalog_type(
+    item_id: int,
+    payload: ProductDictionaryUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ProductDictionaryRead:
+    return _update_dictionary_item(db, ProductTypeCatalog, item_id, payload, normalize_as_type=True)
 
 
 @router.patch("/types/export-exclusion", response_model=ProductTypeExportRuleRead)
@@ -163,6 +256,7 @@ def create_product(
         product.barcodes.append(ProductBarcode(barcode=barcode, is_primary=True, is_active=True))
     db.add(product)
     try:
+        ProductDictionaryService(db).sync_product(product)
         db.commit()
     except IntegrityError as exc:
         db.rollback()
@@ -213,6 +307,7 @@ def update_product(
         _replace_primary_barcode(product, normalize_barcode(payload.barcode))
 
     try:
+        ProductDictionaryService(db).sync_product(product)
         db.commit()
     except IntegrityError as exc:
         db.rollback()
@@ -231,6 +326,53 @@ async def import_products(
     result = await ImportService(db).import_products(file, converter_type=converter_type)
     db.commit()
     return result
+
+
+@router.get("/import-template")
+def product_import_template(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> Response:
+    service = ReferenceWorkbookService()
+    filename = "products_template.xlsx"
+    return Response(
+        content=service.build_products_workbook(),
+        media_type=service.mime_type,
+        headers={"Content-Disposition": _attachment_header(filename)},
+    )
+
+
+@router.get("/export")
+def export_products(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    search: str = "",
+    exclude_from_export: bool | None = None,
+    is_active: bool | None = None,
+    product_type: str = "",
+    brand: str = "",
+    trade_mark: str = "",
+    sort_by: str = "name",
+    sort_dir: str = "asc",
+) -> Response:
+    products = db.scalars(
+        ProductRepository.filtered_query(
+            search=search,
+            exclude_from_export=exclude_from_export,
+            is_active=is_active,
+            product_type=product_type,
+            brand=brand,
+            trade_mark=trade_mark,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+        )
+    ).unique()
+    service = ReferenceWorkbookService()
+    filename = "products_filled.xlsx"
+    return Response(
+        content=service.build_products_workbook(products),
+        media_type=service.mime_type,
+        headers={"Content-Disposition": _attachment_header(filename)},
+    )
 
 
 @router.post("/backfill-names")
@@ -274,3 +416,95 @@ def _payload_multiplier(value: float | None) -> Decimal:
     if multiplier <= 0:
         raise HTTPException(status_code=400, detail="Conversion multiplier must be greater than zero")
     return multiplier
+
+
+def _attachment_header(filename: str) -> str:
+    quoted = quote(filename)
+    return f'attachment; filename="{filename}"; filename*=UTF-8\'\'{quoted}'
+
+
+def _list_dictionary(db: Session, model) -> list:
+    return list(
+        db.scalars(
+            select(model)
+            .where(model.deleted_at.is_(None))
+            .order_by(model.name.asc(), model.id.asc())
+        )
+    )
+
+
+def _list_dictionary_names(db: Session, model, *, normalize_as_type: bool = False) -> list[str]:
+    values: dict[str, str] = {}
+    for item in _list_dictionary(db, model):
+        if not item.is_active:
+            continue
+        value = normalize_product_type(item.name) if normalize_as_type else normalize_text(item.name)
+        if value:
+            values.setdefault(value.casefold(), value)
+    return sorted(values.values(), key=lambda value: value.casefold())
+
+
+def _merged_dictionary_values(db: Session, model, values: list[str]) -> list[str]:
+    merged: dict[str, str] = {value.casefold(): value for value in values if value}
+    for value in _list_dictionary_names(db, model, normalize_as_type=model is ProductTypeCatalog):
+        merged.setdefault(value.casefold(), value)
+    return sorted(merged.values(), key=lambda value: value.casefold())
+
+
+def _create_dictionary_item(
+    db: Session,
+    model,
+    payload: ProductDictionaryCreate,
+    *,
+    normalize_as_type: bool = False,
+):
+    name = normalize_product_type(payload.name) if normalize_as_type else normalize_text(payload.name)
+    if not name:
+        raise HTTPException(status_code=400, detail="Dictionary item name is required")
+    normalized_name = ProductDictionaryService._normalized_key(name, normalize_as_type=normalize_as_type)
+    existing = db.scalar(
+        select(model).where(
+            model.normalized_name == normalized_name,
+            model.deleted_at.is_(None),
+        )
+    )
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="Dictionary item already exists")
+    item = model(name=name, normalized_name=normalized_name, is_active=payload.is_active)
+    db.add(item)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Dictionary item already exists") from exc
+    db.refresh(item)
+    return item
+
+
+def _update_dictionary_item(
+    db: Session,
+    model,
+    item_id: int,
+    payload: ProductDictionaryUpdate,
+    *,
+    normalize_as_type: bool = False,
+):
+    item = db.get(model, item_id)
+    if item is None or item.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Dictionary item not found")
+    try:
+        ProductDictionaryService(db).update_dictionary_item(
+            item,
+            name=payload.name,
+            is_active=payload.is_active,
+            normalize_as_type=normalize_as_type,
+        )
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Dictionary item already exists") from exc
+    db.refresh(item)
+    return item

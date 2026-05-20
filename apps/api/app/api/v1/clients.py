@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import Response
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -13,6 +16,7 @@ from app.repositories.clients import ClientRepository
 from app.models.client import Client
 from app.schemas.client import ClientCreate, ClientRead, ClientUpdate
 from app.services.import_service import ImportService
+from app.services.reference_workbook_service import ReferenceWorkbookService
 from app.utils.normalization import normalize_key, normalize_text
 
 router = APIRouter()
@@ -41,7 +45,6 @@ def create_client(
         raise HTTPException(status_code=400, detail="Client code and name are required")
     client = Client(
         client_code=client_code,
-        client_code_2=normalize_text(payload.client_code_2) or None,
         name=name,
         name_2=normalize_text(payload.name_2) or None,
         normalized_name=normalize_key(name),
@@ -73,8 +76,6 @@ def update_client(
 
     if payload.client_code is not None:
         client.client_code = normalize_text(payload.client_code) or None
-    if payload.client_code_2 is not None:
-        client.client_code_2 = normalize_text(payload.client_code_2) or None
     if payload.name is not None:
         name = normalize_text(payload.name)
         if not name:
@@ -110,3 +111,38 @@ async def import_clients(
     result = await ImportService(db).import_clients(file, converter_type=converter_type)
     db.commit()
     return result
+
+
+@router.get("/import-template")
+def client_import_template(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> Response:
+    service = ReferenceWorkbookService()
+    filename = "clients_template.xlsx"
+    return Response(
+        content=service.build_clients_workbook(),
+        media_type=service.mime_type,
+        headers={"Content-Disposition": _attachment_header(filename)},
+    )
+
+
+@router.get("/export")
+def export_clients(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> Response:
+    clients = db.scalars(
+        select(Client).where(Client.deleted_at.is_(None)).order_by(Client.name, Client.client_code)
+    )
+    service = ReferenceWorkbookService()
+    filename = "clients_filled.xlsx"
+    return Response(
+        content=service.build_clients_workbook(clients),
+        media_type=service.mime_type,
+        headers={"Content-Disposition": _attachment_header(filename)},
+    )
+
+
+def _attachment_header(filename: str) -> str:
+    quoted = quote(filename)
+    return f'attachment; filename="{filename}"; filename*=UTF-8\'\'{quoted}'

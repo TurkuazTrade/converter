@@ -65,7 +65,7 @@ class MatchingService:
         if client is None and client_code:
             client = self._single_client(
                 select(Client).where(
-                    (Client.client_code == client_code) | (Client.client_code_2 == client_code),
+                    Client.client_code == client_code,
                     Client.deleted_at.is_(None),
                     Client.is_active.is_(True),
                 )

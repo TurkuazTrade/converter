@@ -23,7 +23,6 @@ class ClientRepository:
             (Client.name.ilike(pattern))
             | (Client.name_2.ilike(pattern))
             | (Client.client_code.ilike(pattern))
-            | (Client.client_code_2.ilike(pattern))
             | (Client.address.ilike(pattern))
             | (Client.network_name.ilike(pattern))
         ).order_by(Client.name).offset(offset).limit(limit)
@@ -45,7 +44,6 @@ class ClientRepository:
                     value or ""
                     for value in (
                         client.client_code,
-                        client.client_code_2,
                         client.name,
                         client.name_2,
                         client.address,

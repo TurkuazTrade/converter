@@ -19,8 +19,11 @@ class Product(Base, TimestampMixin, SoftDeleteMixin):
     article: Mapped[str | None] = mapped_column(String(128), index=True)
     stock: Mapped[str | None] = mapped_column(String(128))
     trade_mark: Mapped[str | None] = mapped_column(String(256), index=True)
+    trade_mark_id: Mapped[int | None] = mapped_column(ForeignKey("product_trade_marks.id"), index=True)
     brand: Mapped[str | None] = mapped_column(String(256), index=True)
+    brand_id: Mapped[int | None] = mapped_column(ForeignKey("product_brands.id"), index=True)
     product_type: Mapped[str | None] = mapped_column(String(128), index=True)
+    product_type_id: Mapped[int | None] = mapped_column(ForeignKey("product_types.id"), index=True)
     conversion_multiplier: Mapped[Decimal] = mapped_column(
         Numeric(14, 3), default=Decimal("1"), nullable=False
     )
@@ -30,6 +33,39 @@ class Product(Base, TimestampMixin, SoftDeleteMixin):
     barcodes: Mapped[list["ProductBarcode"]] = relationship(
         back_populates="product", cascade="all, delete-orphan"
     )
+    brand_ref = relationship("ProductBrand")
+    trade_mark_ref = relationship("ProductTradeMark")
+    product_type_ref = relationship("ProductTypeCatalog")
+
+
+class ProductBrand(Base, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = "product_brands"
+    __table_args__ = (UniqueConstraint("normalized_name", name="uq_product_brands_normalized_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(String(256), index=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
+class ProductTradeMark(Base, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = "product_trade_marks"
+    __table_args__ = (UniqueConstraint("normalized_name", name="uq_product_trade_marks_normalized_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(String(256), index=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
+class ProductTypeCatalog(Base, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = "product_types"
+    __table_args__ = (UniqueConstraint("normalized_name", name="uq_product_types_normalized_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 
 class ProductBarcode(Base, TimestampMixin, SoftDeleteMixin):
