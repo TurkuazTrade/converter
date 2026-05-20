@@ -1,27 +1,35 @@
-# Turkuaz Platform
+# Turkuaz CRM
 
-Internal web platform for Turkuaz Trade operations. The current working module is the Excel order converter, but the repository is now structured so reports, integrations, and background workers can be added without reshuffling the project later.
+Internal CRM for Turkuaz Trade order operations. The active module converts customer Excel orders into a normalized final export, keeps order history, and maintains product/client reference data for matching.
 
-## Structure
+The repository is organized as a small platform: one web app, one API, local data storage, and reserved folders for future workers, shared contracts, and deployment configuration.
+
+## What Is Included
+
+- Upload and parse Excel order files.
+- Match order rows to clients and products.
+- Maintain product and client reference directories.
+- Configure product export exclusions.
+- Generate final Excel exports from the provided template.
+- Review converter history and unresolved items.
+
+## Repository Structure
 
 ```text
 apps/
-  api/          FastAPI API, SQLAlchemy, Alembic, converters, matching, export
-  web/          React + TypeScript + Vite frontend
-workers/
-  converter/    Future background Excel/file processing worker
-  reports/      Future report generation worker
-  integrations/ Future external API sync worker
-packages/
-  shared/       Future shared types/helpers/contracts
-infra/          Future deployment and infrastructure profiles
-data/           Local SQLite DB, file storage, Excel templates
-docker-compose.yml
+  api/              FastAPI API, SQLAlchemy models, Alembic migrations, converter logic
+  web/              React + TypeScript + Vite frontend
+data/
+  templates/        Excel templates used by exports
+  storage/          Local source/export/quarantine file storage
+docs/               Architecture notes
+infra/              Reserved deployment/infrastructure documentation
+packages/shared/    Reserved shared contracts/helpers
+workers/            Reserved background worker boundaries
+docker-compose.yml  Local development stack
 ```
 
-The recommended growth path is one user-facing web app, one main API, and separate workers only for slow or failure-prone tasks such as file conversion, scheduled reports, and external integrations.
-
-## Local Docker
+## Quick Start With Docker
 
 From the repository root:
 
@@ -29,19 +37,32 @@ From the repository root:
 docker compose up --build
 ```
 
-Open:
+Open the web app:
 
 ```text
 http://localhost:5173
 ```
 
-The API runs on:
+API base URL:
 
 ```text
 http://localhost:8000/api/v1
 ```
 
-## API Setup
+The Docker stack mounts `./data` into the API container, so local SQLite data and generated files stay on the host.
+
+## Default Local Credentials
+
+Development settings auto-create users from `apps/api/.env.example`.
+
+```text
+Admin: admin@example.com / admin123
+Test user: user@example.com / password
+```
+
+Change these before any non-local deployment.
+
+## Manual API Setup
 
 ```bash
 cd apps/api
@@ -50,17 +71,17 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env
 alembic upgrade head
-python -m app.cli create-admin --email admin@example.com --password admin123 --full-name "Admin"
 uvicorn app.main:app --reload
 ```
 
-Healthcheck:
+Useful checks:
 
 ```bash
 curl http://localhost:8000/api/v1/health
+pytest
 ```
 
-## Web Setup
+## Manual Web Setup
 
 ```bash
 cd apps/web
@@ -68,9 +89,17 @@ npm install
 npm run dev
 ```
 
-## Data
+Build check:
 
-For local development, SQLite and files live under:
+```bash
+npm run build
+```
+
+The web app uses `VITE_API_URL` for API requests. Docker sets it to `/api/v1` and proxies to the API service.
+
+## Data And Storage
+
+For local development:
 
 ```text
 data/app.db
@@ -80,52 +109,28 @@ data/storage/quarantine
 data/templates/template_zakaz.xlsx
 ```
 
-The API default paths assume it is run from `apps/api`. Docker overrides these paths to `/data/...`.
+Ignored runtime data should stay under `data/storage/*` and `data/app.db`. Keep `.gitkeep` files so storage directories exist in a clean checkout.
 
-## Tests
+## Converter Configuration
 
-Backend:
-
-```bash
-cd apps/api
-pytest
-```
-
-Frontend:
-
-```bash
-cd apps/web
-npm run build
-```
-
-## Adding A Converter
-
-1. Add a JSON config under `apps/api/app/converters/configs/`.
-2. Include `type`, `version`, `sheet`, `header`, `columns`, and optional `metadata`/`filters`.
-3. Add converter-specific Python only when config-driven parsing cannot express the format.
-4. Add or update tests under `apps/api/tests/`.
-
-## When To Add A Worker
-
-Keep business APIs in `apps/api` by default. Add a worker when the job is slow, scheduled, retry-heavy, or should not affect normal CRM/API responsiveness.
-
-Good worker candidates:
-
-- Excel conversion/import queues
-- large reports
-- scheduled exports
-- external system synchronization
-- webhook processing
-
-## Русская Версия
-
-Это теперь не просто модуль конвертера, а заготовка платформы. Текущий рабочий функционал остался прежним: загрузка заказов, парсинг Excel, сопоставление клиентов/товаров, выгрузка Excel и история. Структура подготовлена так, чтобы позже добавить отчеты, интеграции и фоновые задачи без болезненного переноса папок.
-
-Основной принцип:
+Converter definitions live in:
 
 ```text
-apps/web -> apps/api -> database/storage
-                    -> future workers
+apps/api/app/converters/configs/
 ```
 
-Пока не нужно выносить конвертер в отдельный сервис. Его лучше держать в API, а отдельный worker создать тогда, когда появятся очереди, долгие отчеты или нестабильные внешние интеграции.
+When adding a converter:
+
+1. Add a JSON config with `type`, `version`, `sheet`, `header`, and `columns`.
+2. Prefer config-driven parsing.
+3. Add Python converter code only when the format cannot be expressed by config.
+4. Add or update tests under `apps/api/tests/`.
+
+## Development Rules
+
+- Keep synchronous CRM behavior in `apps/api`.
+- Add a worker only for slow, scheduled, retry-heavy, or externally fragile jobs.
+- Put shared code in `packages/shared` only when at least two apps/workers need it.
+- Do not commit local databases, generated exports, virtual environments, `node_modules`, or build outputs.
+
+More architectural context is in `docs/ARCHITECTURE.md`.

@@ -12,6 +12,7 @@ from app.core.logging import configure_logging
 from app.db.base import Base
 from app.db.session import SessionLocal, engine
 from app.repositories.users import UserRepository
+from app.utils.normalization import normalize_key, normalize_product_type, normalize_text
 
 configure_logging()
 settings.ensure_directories()
@@ -43,15 +44,25 @@ def bootstrap_development_app() -> None:
 
 def _ensure_development_columns() -> None:
     inspector = inspect(engine)
-    if "clients" not in inspector.get_table_names():
+    table_names = set(inspector.get_table_names())
+    if "clients" not in table_names:
         return
     client_columns = {column["name"] for column in inspector.get_columns("clients")}
     product_columns = (
         {column["name"] for column in inspector.get_columns("products")}
-        if "products" in inspector.get_table_names()
+        if "products" in table_names
         else set()
     )
     with engine.begin() as connection:
+        order_columns = (
+            {column["name"] for column in inspector.get_columns("orders")}
+            if "orders" in table_names
+            else set()
+        )
+        if "export_downloaded_at" not in order_columns:
+            connection.execute(text("ALTER TABLE orders ADD COLUMN export_downloaded_at DATETIME"))
+        if "export_downloads" not in order_columns:
+            connection.execute(text("ALTER TABLE orders ADD COLUMN export_downloads JSON"))
         if "name_2" not in client_columns:
             connection.execute(text("ALTER TABLE clients ADD COLUMN name_2 VARCHAR(512)"))
         if "conversion_multiplier" not in product_columns:
@@ -69,10 +80,25 @@ def _ensure_development_columns() -> None:
             "trade_mark": "VARCHAR(256)",
             "brand": "VARCHAR(256)",
             "product_type": "VARCHAR(128)",
+            "trade_mark_id": "INTEGER",
+            "brand_id": "INTEGER",
+            "product_type_id": "INTEGER",
         }.items():
             if column_name not in product_columns:
                 connection.execute(text(f"ALTER TABLE products ADD COLUMN {column_name} {column_type}"))
-        if "product_type_export_rules" not in inspector.get_table_names():
+                product_columns.add(column_name)
+        for table_name in ("product_brands", "product_trade_marks", "product_types", "product_type_export_rules"):
+            if table_name not in table_names:
+                Base.metadata.tables[table_name].create(bind=connection)
+                table_names.add(table_name)
+        product_type_columns = (
+            {column["name"] for column in inspector.get_columns("product_types")}
+            if "product_types" in inspector.get_table_names()
+            else set()
+        )
+        if "product_types" in inspector.get_table_names() and "warehouse_no" not in product_type_columns:
+            connection.execute(text("ALTER TABLE product_types ADD COLUMN warehouse_no VARCHAR(64)"))
+        if "product_type_export_rules" not in table_names:
             Base.metadata.tables["product_type_export_rules"].create(bind=connection)
         if "product_type" in product_columns:
             connection.execute(
@@ -95,6 +121,28 @@ def _ensure_development_columns() -> None:
                       AND product_type != lower(trim(product_type))
                     """
                 )
+            )
+        if {"brand", "brand_id"}.issubset(product_columns):
+            _backfill_development_product_dictionary(
+                connection,
+                table_name="product_brands",
+                value_column="brand",
+                id_column="brand_id",
+            )
+        if {"trade_mark", "trade_mark_id"}.issubset(product_columns):
+            _backfill_development_product_dictionary(
+                connection,
+                table_name="product_trade_marks",
+                value_column="trade_mark",
+                id_column="trade_mark_id",
+            )
+        if {"product_type", "product_type_id"}.issubset(product_columns):
+            _backfill_development_product_dictionary(
+                connection,
+                table_name="product_types",
+                value_column="product_type",
+                id_column="product_type_id",
+                normalize_as_type=True,
             )
         if "product_mappings" in inspector.get_table_names():
             connection.execute(
@@ -123,6 +171,74 @@ def _ensure_development_columns() -> None:
             )
 
 
+def _backfill_development_product_dictionary(
+    connection,
+    *,
+    table_name: str,
+    value_column: str,
+    id_column: str,
+    normalize_as_type: bool = False,
+) -> None:
+    rows = connection.execute(
+        text(
+            f"""
+            SELECT id, {value_column} AS value
+            FROM products
+            WHERE deleted_at IS NULL
+              AND {value_column} IS NOT NULL
+              AND trim({value_column}) != ''
+            """
+        )
+    )
+    for row in rows:
+        value = row._mapping["value"]
+        name = normalize_product_type(value) if normalize_as_type else normalize_text(value)
+        if not name:
+            continue
+        normalized_name = name if normalize_as_type else normalize_key(name)
+        if not normalized_name:
+            continue
+        item_id = connection.execute(
+            text(
+                f"""
+                SELECT id
+                FROM {table_name}
+                WHERE normalized_name = :normalized_name
+                  AND deleted_at IS NULL
+                LIMIT 1
+                """
+            ),
+            {"normalized_name": normalized_name},
+        ).scalar_one_or_none()
+        if item_id is None:
+            connection.execute(
+                text(
+                    f"""
+                    INSERT INTO {table_name}
+                        (name, normalized_name, is_active, created_at, updated_at, deleted_at)
+                    VALUES
+                        (:name, :normalized_name, :is_active, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL)
+                    """
+                ),
+                {"name": name, "normalized_name": normalized_name, "is_active": True},
+            )
+            item_id = connection.execute(
+                text(f"SELECT id FROM {table_name} WHERE normalized_name = :normalized_name LIMIT 1"),
+                {"normalized_name": normalized_name},
+            ).scalar_one()
+        connection.execute(
+            text(
+                f"""
+                UPDATE products
+                SET {id_column} = :item_id,
+                    {value_column} = :name
+                WHERE id = :product_id
+                """
+            ),
+            {"item_id": item_id, "name": name, "product_id": row._mapping["id"]},
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     bootstrap_development_app()
@@ -134,9 +250,15 @@ app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.backend_cors_origins,
+    allow_origin_regex=settings.backend_cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=[
+        "Content-Disposition",
+        "X-Export-Previously-Downloaded-By",
+        "X-Export-Previously-Downloaded-At",
+    ],
 )
 
 app.include_router(api_router)

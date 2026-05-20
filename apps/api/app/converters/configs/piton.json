@@ -6,6 +6,7 @@
   "columns": {
     "document_no": ["Номер"],
     "document_date": ["Дата"],
+    "warehouse_no": ["WH NO", "Warehouse", "Склад", "Номер склада", "Код склада"],
     "client_name": ["Контрагент"],
     "client_branch": ["Подразделение"],
     "item_code": ["Код товара", "Номер товара"],

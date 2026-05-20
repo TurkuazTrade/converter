@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.deps import get_current_user
 from app.core.enums import OrderItemStatus, OrderStatus
+from app.db.base import utc_now
 from app.db.session import get_db
 from app.models.user import User
 from app.models.order import Order
@@ -17,6 +18,7 @@ from app.repositories.orders import OrderRepository
 from app.schemas.order import OrderDetail, OrderRead, UploadOrderResponse
 from app.services.export_service import ExportService
 from app.services.matching_service import MatchingService
+from app.services.reference_workbook_service import ReferenceWorkbookService
 from app.services.reprocess_service import ReprocessService
 from app.services.storage_service import LocalStorageService
 
@@ -153,6 +155,8 @@ def order_debug(
             "order_number": order.order_number,
             "source_file_id": order.source_file_id,
             "export_file_id": order.export_file_id,
+            "export_downloaded_at": order.export_downloaded_at,
+            "export_downloads": order.export_downloads,
         },
         "client": (
             {
@@ -342,11 +346,42 @@ def download_export(
         result = _generate_export(db, order_id, current_user.id, product_type=product_type)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    order = OrderRepository(db).get(order_id)
+    previous_download = _export_download_info(order, product_type) if order is not None else None
+    if order is not None:
+        _mark_export_downloaded(order, product_type, current_user)
     db.commit()
+    headers = {"Content-Disposition": _attachment_header(result.filename)}
+    if previous_download:
+        previous_user_name = previous_download.get("user_name")
+        previous_downloaded_at = previous_download.get("downloaded_at")
+        if previous_user_name:
+            headers["X-Export-Previously-Downloaded-By"] = quote(str(previous_user_name))
+        if previous_downloaded_at:
+            headers["X-Export-Previously-Downloaded-At"] = quote(str(previous_downloaded_at))
     return Response(
         content=result.content,
         media_type=result.mime_type,
-        headers={"Content-Disposition": _attachment_header(result.filename)},
+        headers=headers,
+    )
+
+
+@router.get("/templates/import")
+def order_import_template(
+    current_user: Annotated[User, Depends(get_current_user)],
+    converter_type: str | None = None,
+) -> Response:
+    service = ReferenceWorkbookService()
+    selected_converter = converter_type or "asia_retail"
+    try:
+        content = service.build_order_template(selected_converter)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Converter template not found") from exc
+    filename = f"order_template_{selected_converter}.xlsx"
+    return Response(
+        content=content,
+        media_type=service.mime_type,
+        headers={"Content-Disposition": _attachment_header(filename)},
     )
 
 
@@ -377,6 +412,30 @@ def _generate_export(db: Session, order_id: int, user_id: int, *, product_type: 
         raise ValueError("Order not found.")
     ReprocessService(db).rematch_only(order_id, user_id=user_id)
     return ExportService().export_order(db, order_id, user_id=user_id, product_type=product_type)
+
+
+def _mark_export_downloaded(order: Order, product_type: str | None, user: User) -> None:
+    downloaded_at = utc_now()
+    download_key = product_type.strip() if product_type and product_type.strip() else "__full__"
+    order.export_downloaded_at = downloaded_at
+    order.export_downloads = {
+        **(order.export_downloads or {}),
+        download_key: {
+            "downloaded_at": downloaded_at.isoformat(),
+            "user_id": user.id,
+            "user_name": user.full_name,
+        },
+    }
+
+
+def _export_download_info(order: Order, product_type: str | None) -> dict | None:
+    download_key = product_type.strip() if product_type and product_type.strip() else "__full__"
+    value = (order.export_downloads or {}).get(download_key)
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        return {"downloaded_at": value}
+    return None
 
 
 def _refresh_order_state(db: Session, order: Order) -> None:

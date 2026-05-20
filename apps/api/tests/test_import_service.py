@@ -85,6 +85,32 @@ async def test_import_products_skips_duplicate_mappings_in_same_file(db_session:
 
 
 @pytest.mark.asyncio
+async def test_import_products_updates_existing_item_code_without_case_sensitivity(db_session: Session) -> None:
+    product = Product(item_code="ERP-Case-1", name="Old name", is_active=True)
+    db_session.add(product)
+    db_session.flush()
+    upload = _upload_workbook(
+        "PITON CONVERT.xlsx",
+        {
+            "convert": [
+                ["SKU_NO", "Name", "Conv. Quantity"],
+                ["erp-case-1", "New name", 2],
+            ],
+        },
+    )
+
+    result = await ImportService(db_session).import_products(upload)
+    db_session.flush()
+
+    products = list(db_session.scalars(select(Product).where(Product.item_code.ilike("erp-case-1"))))
+    assert result["inserted"] == 0
+    assert result["updated"] == 1
+    assert len(products) == 1
+    assert product.name == "New name"
+    assert product.conversion_multiplier == Decimal("2.000")
+
+
+@pytest.mark.asyncio
 async def test_import_products_keeps_real_human_name(db_session: Session) -> None:
     upload = _upload_workbook(
         "PITON CONVERT.xlsx",
@@ -261,6 +287,52 @@ async def test_import_products_reads_globys_convert_item_code_mapping(db_session
     assert item.conversion_multiplier == Decimal("12.000")
     assert item.quantity == Decimal("24.000")
     assert item.status == OrderItemStatus.RESOLVED.value
+
+
+@pytest.mark.asyncio
+async def test_import_products_allows_missing_item_code(db_session: Session) -> None:
+    upload = _upload_workbook(
+        "PRODUCTS.xlsx",
+        {
+            "convert": [
+                ["BARCODE", "Name", "Brand"],
+                ["5029053540108", "Мыло без номера", "DALAN"],
+            ],
+        },
+    )
+
+    result = await ImportService(db_session).import_products(upload)
+    db_session.flush()
+
+    product = db_session.scalar(select(Product).where(Product.name == "Мыло без номера"))
+    assert result["inserted"] == 1
+    assert result["skipped"] == 0
+    assert result["skipped_file"] is None
+    assert product is not None
+    assert product.item_code is None
+    assert product.brand == "DALAN"
+    assert db_session.scalar(select(ProductBarcode).where(ProductBarcode.barcode == "5029053540108")) is not None
+
+
+@pytest.mark.asyncio
+async def test_import_products_returns_skipped_rows_workbook(db_session: Session) -> None:
+    upload = _upload_workbook(
+        "PRODUCTS.xlsx",
+        {
+            "convert": [
+                ["SKU_NO", "BARCODE", "Name", "Brand"],
+                [None, None, None, "DALAN"],
+            ],
+        },
+    )
+
+    result = await ImportService(db_session).import_products(upload)
+
+    assert result["inserted"] == 0
+    assert result["skipped"] == 1
+    assert result["skipped_file"] is not None
+    assert result["skipped_file"]["filename"] == "PRODUCTS_skipped.xlsx"
+    assert result["skipped_file"]["content_base64"]
 
 
 @pytest.mark.asyncio

@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { FormModal } from '../components/FormModal';
 import { PaginationControls } from '../components/PaginationControls';
+import { ReferenceImportModal } from '../components/ReferenceImportModal';
 
 type ClientForm = {
   id?: number;
@@ -26,6 +27,7 @@ export function ClientsPage() {
   const [limit, setLimit] = useState(50);
   const [form, setForm] = useState<ClientForm>(emptyClientForm);
   const [formOpen, setFormOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [formError, setFormError] = useState('');
   const { data, isLoading } = useQuery({
     queryKey: ['clients', search, page, limit],
@@ -97,7 +99,12 @@ export function ClientsPage() {
           <h1 className="text-xl font-semibold">Клиенты</h1>
           <p className="mt-1 text-sm text-slate-400">Справочник клиентов для определения получателя заказа.</p>
         </div>
-        <button type="button" className="button" onClick={openCreateClient}>Добавить клиента</button>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="button-secondary" onClick={() => setImportOpen(true)}>
+            Импорт клиентов
+          </button>
+          <button type="button" className="button" onClick={openCreateClient}>Добавить клиента</button>
+        </div>
       </div>
       <div className="flex flex-wrap gap-3">
         <input className="input w-full md:w-96" placeholder="Поиск по коду или названию клиента" value={search} onChange={(event) => updateSearch(event.target.value)} />
@@ -176,6 +183,13 @@ export function ClientsPage() {
             </label>
           </div>
         </FormModal>
+      )}
+      {importOpen && (
+        <ReferenceImportModal
+          kind="clients"
+          title="Импорт клиентов"
+          onClose={() => setImportOpen(false)}
+        />
       )}
     </main>
   );

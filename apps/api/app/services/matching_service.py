@@ -4,7 +4,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.enums import OrderItemStatus
@@ -46,7 +46,12 @@ class MatchingService:
         normalized_address = normalize_key(raw_address)
 
         client = None
-        if normalized_name or normalized_address:
+        mapping_conditions = []
+        if normalized_name:
+            mapping_conditions.append(ClientMapping.normalized_client_name == normalized_name)
+        if normalized_address:
+            mapping_conditions.append(ClientMapping.normalized_address == normalized_address)
+        if mapping_conditions:
             client = self._single_client(
                 select(Client)
                 .join(ClientMapping, ClientMapping.client_id == Client.id)
@@ -56,16 +61,13 @@ class MatchingService:
                     ClientMapping.deleted_at.is_(None),
                     Client.deleted_at.is_(None),
                     Client.is_active.is_(True),
-                    (
-                        (ClientMapping.normalized_client_name == normalized_name)
-                        | (ClientMapping.normalized_address == normalized_address)
-                    ),
+                    or_(*mapping_conditions),
                 )
             )
         if client is None and client_code:
             client = self._single_client(
                 select(Client).where(
-                    (Client.client_code == client_code) | (Client.client_code_2 == client_code),
+                    Client.client_code == client_code,
                     Client.deleted_at.is_(None),
                     Client.is_active.is_(True),
                 )
@@ -227,13 +229,7 @@ class MatchingService:
                     conversion_multiplier=self._product_multiplier(mapped_by_item_code.product),
                 )
 
-            by_code = self.db.scalar(
-                select(Product).where(
-                    Product.item_code == item.raw_item_code,
-                    Product.deleted_at.is_(None),
-                    Product.is_active.is_(True),
-                )
-            )
+            by_code = self._single_product_by_item_code(item.raw_item_code)
             if by_code is not None:
                 return ProductMatch(product=by_code, conversion_multiplier=self._product_multiplier(by_code))
 
@@ -392,20 +388,83 @@ class MatchingService:
     def _trusted_barcode_condition():
         return or_(ProductBarcode.source.is_(None), ProductBarcode.source != "smoke")
 
+    def _single_product_by_item_code(self, item_code: str) -> Product | None:
+        normalized_item_code = normalize_text(item_code).casefold()
+        if not normalized_item_code:
+            return None
+
+        matches = [
+            product
+            for product in self.db.scalars(
+                select(Product).where(
+                    func.lower(Product.item_code) == normalized_item_code,
+                    Product.deleted_at.is_(None),
+                    Product.is_active.is_(True),
+                )
+            )
+            if normalize_text(product.item_code).casefold() == normalized_item_code
+        ]
+        if not matches:
+            matches = [
+                product
+                for product in self.db.scalars(
+                    select(Product).where(
+                        Product.item_code.is_not(None),
+                        Product.deleted_at.is_(None),
+                        Product.is_active.is_(True),
+                    )
+                )
+                if normalize_text(product.item_code).casefold() == normalized_item_code
+            ]
+        return matches[0] if len(matches) == 1 else None
+
     def save_client_mapping(self, order_id: int, client_id: int, user_id: int) -> None:
         order = self.db.get(Order, order_id)
         client = self.db.get(Client, client_id)
         if order is None or client is None:
             raise ValueError("Order or client not found.")
         hint = (order.parsed_snapshot or {}).get("client_hint") or {}
+        normalized_client_name = normalize_key(hint.get("raw_name")) or None
+        normalized_address = normalize_key(hint.get("raw_address")) or None
+        self._deactivate_conflicting_client_mappings(
+            order.converter_type or "",
+            client.id,
+            normalized_client_name,
+            normalized_address,
+        )
         mapping = ClientMapping(
             converter_type=order.converter_type or "",
             raw_client_name=hint.get("raw_name"),
-            normalized_client_name=normalize_key(hint.get("raw_name")),
+            normalized_client_name=normalized_client_name,
             raw_address=hint.get("raw_address"),
-            normalized_address=normalize_key(hint.get("raw_address")),
+            normalized_address=normalized_address,
             client_id=client.id,
             created_by_id=user_id,
         )
         self.db.add(mapping)
         order.client_id = client.id
+
+    def _deactivate_conflicting_client_mappings(
+        self,
+        converter_type: str,
+        client_id: int,
+        normalized_client_name: str | None,
+        normalized_address: str | None,
+    ) -> None:
+        conditions = []
+        if normalized_client_name:
+            conditions.append(ClientMapping.normalized_client_name == normalized_client_name)
+        if normalized_address:
+            conditions.append(ClientMapping.normalized_address == normalized_address)
+        if not conditions:
+            return
+        for mapping in self.db.scalars(
+            select(ClientMapping).where(
+                ClientMapping.converter_type == converter_type,
+                ClientMapping.client_id != client_id,
+                ClientMapping.is_active.is_(True),
+                ClientMapping.deleted_at.is_(None),
+                or_(*conditions),
+            )
+        ):
+            mapping.is_active = False

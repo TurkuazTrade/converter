@@ -4,6 +4,7 @@
   "extends": "narodnyi",
   "sheet": {"strategy": "first_matching", "name_aliases": ["TDSheet"]},
   "columns": {
+    "warehouse_no": ["WH NO", "Warehouse", "Склад", "Номер склада", "Код склада"],
     "item_code": ["Код"],
     "item_name": ["Продукция"],
     "barcode": ["Штрихкод"],

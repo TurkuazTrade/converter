@@ -15,6 +15,8 @@ class OrderRead(BaseModel):
     client_id: int | None
     source_file_id: int | None
     export_file_id: int | None
+    export_downloaded_at: datetime | None
+    export_downloads: dict | None
     status: str
     error_message: str | None
     source_hash: str | None

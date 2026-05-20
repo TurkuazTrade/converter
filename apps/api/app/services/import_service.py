@@ -1,18 +1,21 @@
 from __future__ import annotations
 
+import base64
 import tempfile
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from fastapi import UploadFile
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.client import Client
 from app.models.mapping import ClientMapping, ProductMapping
 from app.models.product import Product, ProductBarcode
 from app.services.converter_registry_service import ConverterRegistryService
+from app.services.product_dictionary_service import ProductDictionaryService
+from app.services.reference_workbook_service import ReferenceWorkbookService
 from app.utils.excel_reader import read_workbook
 from app.utils.normalization import (
     normalize_barcode,
@@ -40,7 +43,11 @@ class ImportService:
         path = await self._save_temp_upload(file)
         try:
             detected_converter = converter_type or self._detect_converter_type(file.filename or path.name)
-            products = self._import_products_from_path(path, detected_converter) if import_products else None
+            products = (
+                self._import_products_from_path(path, detected_converter, source_filename=file.filename)
+                if import_products
+                else None
+            )
             clients = self._import_clients_from_path(path, detected_converter) if import_clients else None
             return {
                 "status": "ok",
@@ -55,7 +62,7 @@ class ImportService:
         path = await self._save_temp_upload(file)
         try:
             detected_converter = converter_type or self._detect_converter_type(file.filename or path.name)
-            return self._import_products_from_path(path, detected_converter)
+            return self._import_products_from_path(path, detected_converter, source_filename=file.filename)
         finally:
             path.unlink(missing_ok=True)
 
@@ -67,9 +74,17 @@ class ImportService:
         finally:
             path.unlink(missing_ok=True)
 
-    def _import_products_from_path(self, path: Path, detected_converter: str | None) -> dict:
+    def _import_products_from_path(
+        self,
+        path: Path,
+        detected_converter: str | None,
+        *,
+        source_filename: str | None = None,
+    ) -> dict:
         rows = self._rows_from_excel(path, preferred_sheets=("convert",), kind="products")
         inserted = updated = skipped = mappings_inserted = 0
+        skipped_rows: list[dict[str, Any]] = []
+        dictionary_service = ProductDictionaryService(self.db)
         seen_mappings: set[tuple[str, str, str, int]] = set()
         seen_barcodes: set[tuple[int, str]] = set()
         for row in rows:
@@ -86,8 +101,19 @@ class ImportService:
             price_code = normalize_item_code(row.get("price_code"))
             conversion_multiplier = self._conversion_multiplier(row.get("conversion_quantity"))
             catalog_fields = self._catalog_fields(row)
-            if not item_code or not (barcode or raw_item_code or explicit_name):
+            if not (barcode or raw_item_code or explicit_name):
                 skipped += 1
+                skipped_rows.append(
+                    self._skipped_product_row(
+                        row,
+                        reason=self._product_skip_reason(
+                            item_code=item_code,
+                            barcode=barcode,
+                            raw_item_code=raw_item_code,
+                            explicit_name=explicit_name,
+                        ),
+                    )
+                )
                 continue
             product = self._find_product(barcode=barcode, item_code=item_code)
             if product is None:
@@ -100,6 +126,7 @@ class ImportService:
                     is_active=True,
                 )
                 self.db.add(product)
+                dictionary_service.sync_product(product)
                 self.db.flush()
                 inserted += 1
             else:
@@ -110,6 +137,7 @@ class ImportService:
                 product.conversion_multiplier = conversion_multiplier
                 self._apply_catalog_fields(product, catalog_fields)
                 product.is_active = True
+                dictionary_service.sync_product(product)
                 updated += 1
             barcode_key = (product.id, barcode) if barcode else None
             if barcode_key and barcode_key not in seen_barcodes and not self._barcode_exists(product.id, barcode):
@@ -140,6 +168,7 @@ class ImportService:
             "updated": updated,
             "skipped": skipped,
             "mappings_inserted": mappings_inserted,
+            "skipped_file": self._skipped_products_file(skipped_rows, source_filename or path.name) if skipped_rows else None,
         }
 
     def _import_clients_from_path(self, path: Path, detected_converter: str | None) -> dict:
@@ -150,7 +179,6 @@ class ImportService:
         seen_mappings: set[tuple[str, str, int]] = set()
         for row in rows:
             client_code = normalize_item_code(row.get("client_code"))
-            client_code_2 = normalize_item_code(row.get("client_code_2"))
             name = normalize_text(row.get("name"))
             raw_client_name = normalize_text(row.get("raw_client_name"))
             name_2 = self._secondary_client_name(name, row.get("name_2"), raw_client_name)
@@ -168,7 +196,6 @@ class ImportService:
             if client is None:
                 client = Client(
                     client_code=client_code,
-                    client_code_2=client_code_2,
                     name=name or client_code or "Unknown client",
                     name_2=name_2,
                     normalized_name=normalize_key(name or client_code),
@@ -182,7 +209,6 @@ class ImportService:
                 inserted += 1
             else:
                 client.client_code = client.client_code or client_code
-                client.client_code_2 = client_code_2 or client.client_code_2
                 client.name = name or client.name
                 client.name_2 = name_2 or client.name_2
                 client.normalized_name = normalize_key(client.name)
@@ -238,6 +264,8 @@ class ImportService:
         if kind == "products":
             records: list[dict[str, Any]] = []
             for sheet in self._prioritized_sheets(sheets, preferred_sheets):
+                if normalize_key(sheet.name) in {"client", "clients", "клиенты"}:
+                    continue
                 for row_index, row in sheet.visible_rows():
                     mapping = self._header_mapping(row, kind=kind)
                     if not mapping:
@@ -253,6 +281,8 @@ class ImportService:
                         if sheet_type and normalize_key(sheet_type) != "convert":
                             record["product_type"] = sheet_type
                         if any(normalize_text(value) for value in record.values()):
+                            record["__sheet"] = sheet.name
+                            record["__row_number"] = data_row_index + 1
                             records.append(record)
                     break
             return records
@@ -313,7 +343,6 @@ class ImportService:
             "product_type": {"тип", "type", "producttype", "категория"},
             "conversion_quantity": {"convquantity", "conversionquantity", "коэффициент"},
             "client_code": {"кодклиентапанорама", "кодклиента", "clientcode", "код"},
-            "client_code_2": {"кодклиента2", "clientcode2"},
             "raw_client_name": {"названиеклиентапитон", "rawclientname", "networkclientname"},
             "name_2": {
                 "название2",
@@ -346,9 +375,8 @@ class ImportService:
                 mapping["brand"] = 5
 
         if kind == "products":
-            if "item_code" in mapping and (
-                "barcode" in mapping or "raw_item_code" in mapping or "name" in mapping
-            ):
+            item_code_fields = {"item_code", "item_code_alt_1", "item_code_alt_2", "item_code_alt_3"}
+            if item_code_fields.intersection(mapping) or "barcode" in mapping or "raw_item_code" in mapping or "name" in mapping:
                 return mapping
             return None
         if kind == "clients":
@@ -392,6 +420,49 @@ class ImportService:
         if multiplier is None or multiplier <= 0:
             return Decimal("1")
         return multiplier
+
+    @staticmethod
+    def _product_skip_reason(
+        *,
+        item_code: str | None,
+        barcode: str | None,
+        raw_item_code: str | None,
+        explicit_name: str,
+    ) -> str:
+        reasons: list[str] = []
+        if not (barcode or raw_item_code or explicit_name):
+            reasons.append("нет штрихкода, кода сети или названия")
+        return "; ".join(reasons) or "строка не распознана"
+
+    @staticmethod
+    def _skipped_product_row(row: dict[str, Any], *, reason: str) -> dict[str, Any]:
+        return {
+            "reason": reason,
+            "sheet": row.get("__sheet"),
+            "row_number": row.get("__row_number"),
+            "item_code": row.get("item_code"),
+            "barcode": row.get("barcode"),
+            "raw_item_code": row.get("raw_item_code"),
+            "name": row.get("name"),
+            "price_code": row.get("price_code"),
+            "exchange_code": row.get("exchange_code"),
+            "article": row.get("article"),
+            "stock": row.get("stock"),
+            "trade_mark": row.get("trade_mark"),
+            "brand": row.get("brand"),
+            "product_type": row.get("product_type"),
+            "conversion_quantity": row.get("conversion_quantity"),
+        }
+
+    @staticmethod
+    def _skipped_products_file(rows: list[dict[str, Any]], source_filename: str) -> dict[str, str]:
+        content = ReferenceWorkbookService().build_skipped_products_workbook(rows)
+        stem = Path(source_filename or "products").stem or "products"
+        return {
+            "filename": f"{stem}_skipped.xlsx",
+            "mime_type": ReferenceWorkbookService.mime_type,
+            "content_base64": base64.b64encode(content).decode("ascii"),
+        }
 
     @staticmethod
     def _human_product_name(
@@ -442,8 +513,36 @@ class ImportService:
             if product is not None:
                 return product
         if item_code:
-            return self.db.scalar(select(Product).where(Product.item_code == item_code, Product.deleted_at.is_(None)))
+            return self._single_product_by_item_code(item_code)
         return None
+
+    def _single_product_by_item_code(self, item_code: str) -> Product | None:
+        normalized_item_code = normalize_text(item_code).casefold()
+        if not normalized_item_code:
+            return None
+
+        matches = [
+            product
+            for product in self.db.scalars(
+                select(Product).where(
+                    func.lower(Product.item_code) == normalized_item_code,
+                    Product.deleted_at.is_(None),
+                )
+            )
+            if normalize_text(product.item_code).casefold() == normalized_item_code
+        ]
+        if not matches:
+            matches = [
+                product
+                for product in self.db.scalars(
+                    select(Product).where(
+                        Product.item_code.is_not(None),
+                        Product.deleted_at.is_(None),
+                    )
+                )
+                if normalize_text(product.item_code).casefold() == normalized_item_code
+            ]
+        return matches[0] if len(matches) == 1 else None
 
     def _barcode_exists(self, product_id: int, barcode: str) -> bool:
         return (

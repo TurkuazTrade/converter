@@ -53,6 +53,7 @@ class ConfigDrivenConverter(BaseConverter):
         first_data = self._first_data_row(match)
         document_no = self._document_no(match, first_data, path)
         document_date = self._document_date(match, first_data)
+        warehouse_no = self._warehouse_no(match, first_data)
         client_hint = self._client_hint(match, first_data)
         items = self._parse_items(match)
         if not items:
@@ -62,6 +63,7 @@ class ConfigDrivenConverter(BaseConverter):
         return ParsedOrder(
             document_no=document_no,
             document_date=document_date,
+            warehouse_no=warehouse_no,
             sheet_name=match.sheet.name,
             header_row=match.header_row,
             client_hint=client_hint,
@@ -168,6 +170,8 @@ class ConfigDrivenConverter(BaseConverter):
         first_data: tuple[int, list[Any]] | None,
         path: Path,
     ) -> str:
+        if self.config.get("metadata", {}).get("document_no_strategy") == "filename":
+            return path.stem
         row = first_data[1] if first_data else None
         from_column = normalize_text(self._cell(row, match.columns.get("document_no")))
         if from_column:
@@ -189,6 +193,14 @@ class ConfigDrivenConverter(BaseConverter):
         if matches:
             return parse_date(matches[-1 if self.converter_type == "alma" else 0], default=date.today())
         return date.today()
+
+    def _warehouse_no(
+        self,
+        match: HeaderMatch,
+        first_data: tuple[int, list[Any]] | None,
+    ) -> str | None:
+        row = first_data[1] if first_data else None
+        return normalize_item_code(self._cell(row, match.columns.get("warehouse_no"))) or None
 
     def _client_hint(
         self,
@@ -230,7 +242,11 @@ class ConfigDrivenConverter(BaseConverter):
 
         return ParsedClientHint(
             raw_name=client_name,
-            raw_address=self._first_match(r"Адрес(?: доставки)?:\s*(.+?)(?:\s+тел|\s+График|\s*$)", text, ""),
+            raw_address=self._first_match(
+                r"Адрес(?: доставки)?:\s*(.+?)(?:\s+тел|\s+График|\s+ID\s+Штрих|\s*$)",
+                text,
+                "",
+            ),
             client_code=client_code,
             payload={"source": "config_driven"},
         )

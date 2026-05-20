@@ -220,7 +220,7 @@ class OrderProcessingService:
 
     def _detect_converter(self, stored: StoredObject) -> str:
         detected = self.registry.detect_converter(stored.original_name)
-        if detected is not None:
+        if detected is not None and detected.value != "alma":
             return detected.value
         preview_text = self._preview_text(Path(stored.path))
         detected = self.registry.detect_converter(stored.original_name, preview_text=preview_text)
