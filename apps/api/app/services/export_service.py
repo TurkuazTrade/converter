@@ -146,7 +146,6 @@ class ExportService:
             if order.problems:
                 self._write_problem_sheet(workbook, order.problems)
 
-            self._remove_unit_price_column(template_sheet, layout)
             self._normalize_workbook_views(workbook)
 
             buffer = BytesIO()
@@ -463,11 +462,6 @@ class ExportService:
             worksheet.cell(row, layout.quantity_col).value = line.quantity
             if layout.unit_price_col is not None and line.unit_price is not None:
                 worksheet.cell(row, layout.unit_price_col).value = line.unit_price
-
-    @staticmethod
-    def _remove_unit_price_column(worksheet, layout) -> None:
-        if layout.unit_price_col is not None:
-            worksheet.delete_cols(layout.unit_price_col)
 
     @staticmethod
     def _copy_template_block(worksheet, row_count: int, target_start_row: int) -> None:

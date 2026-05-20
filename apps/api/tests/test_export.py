@@ -59,7 +59,7 @@ def test_export_matches_template_contract() -> None:
     assert sheet["A4"].value == "FICHE NO"
     assert sheet["B4"].value == "0000000001"
     assert sheet["C5"].value == "Unit"
-    assert sheet.max_column == 4
+    assert sheet["E5"].value == "Unit Price (Tenge)"
     assert sheet["A6"].value == "201300090081421071130040"
     assert sheet["B6"].value == "Test product 1"
     assert sheet["C6"].value == 1
@@ -68,6 +68,7 @@ def test_export_matches_template_contract() -> None:
     assert sheet["B7"].value == "Test product 2"
     assert sheet["C7"].value == 1
     assert sheet["D7"].value == 12.5
+    assert sheet["E6"].value is None
     assert sheet["A6"].border.left.style == template_sheet["A6"].border.left.style
     assert sheet["D6"].fill.fill_type == template_sheet["D6"].fill.fill_type
     assert sheet.sheet_view.selection[0].activeCell == "A1"
