@@ -13,7 +13,7 @@ from app.core.enums import OrderItemStatus, OrderStatus
 from app.models.client import Client
 from app.models.mapping import ClientMapping, ProductMapping
 from app.models.order import Order, OrderItem
-from app.models.product import Product, ProductBarcode
+from app.models.product import Product, ProductBarcode, ProductTypeCatalog
 from app.services.import_service import ImportService
 from app.services.matching_service import MatchingService
 
@@ -282,6 +282,35 @@ async def test_import_products_reads_catalog_fields_from_product_sheets(db_sessi
     assert nonfood_product.trade_mark == "DALAN"
     assert nonfood_product.brand == "DALAN"
     assert nonfood_product.product_type == "nonfood"
+
+
+@pytest.mark.asyncio
+async def test_import_products_does_not_use_generic_sheet_name_as_product_type(
+    db_session: Session,
+) -> None:
+    upload = _upload_workbook(
+        "PRODUCTS.xlsx",
+        {
+            "Лист1": [
+                ["Наименование", "Номер товара", "Штрихкод"],
+                ["Печенье Roshen", "201082060195409891300054", "4823077636332"],
+            ],
+        },
+    )
+
+    result = await ImportService(db_session).import_products(upload)
+    db_session.flush()
+
+    product = db_session.scalar(select(Product).where(Product.item_code == "201082060195409891300054"))
+    assert result["inserted"] == 1
+    assert product is not None
+    assert product.product_type is None
+    assert (
+        db_session.scalar(
+            select(ProductTypeCatalog).where(ProductTypeCatalog.normalized_name == "лист1")
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio

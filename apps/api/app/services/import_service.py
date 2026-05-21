@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import re
 import tempfile
 from decimal import Decimal
 from pathlib import Path
@@ -263,7 +264,7 @@ class ImportService:
                     mapping = self._header_mapping(row, kind=kind)
                     if not mapping:
                         continue
-                    sheet_type = normalize_text(sheet.name) or None
+                    sheet_type = self._product_type_from_sheet_name(sheet.name)
                     for data_row_index, data_row in sheet.visible_rows():
                         if data_row_index <= row_index:
                             continue
@@ -305,6 +306,15 @@ class ImportService:
         preferred = [sheet for sheet in sheets if normalize_key(sheet.name) in preferred_keys]
         others = [sheet for sheet in sheets if normalize_key(sheet.name) not in preferred_keys]
         return preferred + others
+
+    @staticmethod
+    def _product_type_from_sheet_name(sheet_name: str) -> str | None:
+        sheet_type = normalize_text(sheet_name)
+        if not sheet_type:
+            return None
+        if re.fullmatch(r"(лист|sheet|таблица)\d*", normalize_key(sheet_type)):
+            return None
+        return sheet_type
 
     @staticmethod
     def _header_mapping(row: list[Any], *, kind: str = "generic") -> dict[str, int] | None:
