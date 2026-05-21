@@ -130,7 +130,8 @@ class ImportService:
                 self.db.flush()
                 inserted += 1
             else:
-                product.item_code = product.item_code or item_code
+                if item_code and not product.item_code and self._can_assign_item_code(product, item_code):
+                    product.item_code = item_code
                 if explicit_name:
                     product.name = explicit_name
                 product.price_code = price_code or product.price_code
@@ -140,16 +141,8 @@ class ImportService:
                 dictionary_service.sync_product(product)
                 updated += 1
             barcode_key = (product.id, barcode) if barcode else None
-            if barcode_key and barcode_key not in seen_barcodes and not self._barcode_exists(product.id, barcode):
-                self.db.add(
-                    ProductBarcode(
-                        product_id=product.id,
-                        barcode=barcode,
-                        source="import",
-                        is_primary=not product.barcodes,
-                        is_active=True,
-                    )
-                )
+            if barcode_key and barcode_key not in seen_barcodes:
+                self._ensure_product_barcode(product, barcode)
                 seen_barcodes.add(barcode_key)
             if detected_converter and self._save_product_mapping(
                 converter_type=detected_converter,
@@ -497,6 +490,10 @@ class ImportService:
         return detected.value if detected else None
 
     def _find_product(self, barcode: str | None, item_code: str | None) -> Product | None:
+        if item_code and not self._is_weak_numeric_item_code(item_code):
+            product = self._single_product_by_item_code(item_code)
+            if product is not None:
+                return product
         if barcode:
             product = self.db.scalar(
                 select(Product)
@@ -515,6 +512,16 @@ class ImportService:
         if item_code:
             return self._single_product_by_item_code(item_code)
         return None
+
+    @staticmethod
+    def _is_weak_numeric_item_code(item_code: str) -> bool:
+        return item_code.isdigit() and len(item_code) <= 7
+
+    def _can_assign_item_code(self, product: Product, item_code: str) -> bool:
+        if not self._is_weak_numeric_item_code(item_code):
+            return True
+        existing = self._single_product_by_item_code(item_code)
+        return existing is None or existing.id == product.id
 
     def _single_product_by_item_code(self, item_code: str) -> Product | None:
         normalized_item_code = normalize_text(item_code).casefold()
@@ -544,13 +551,49 @@ class ImportService:
             ]
         return matches[0] if len(matches) == 1 else None
 
-    def _barcode_exists(self, product_id: int, barcode: str) -> bool:
+    def _ensure_product_barcode(self, product: Product, barcode: str) -> None:
+        self._deactivate_conflicting_barcodes(product.id, barcode)
+        existing = self.db.scalar(
+            select(ProductBarcode).where(
+                ProductBarcode.product_id == product.id,
+                ProductBarcode.barcode == barcode,
+                ProductBarcode.deleted_at.is_(None),
+            )
+        )
+        if existing is not None:
+            existing.source = existing.source or "import"
+            existing.is_active = True
+            existing.is_primary = existing.is_primary or not self._has_active_barcode(product.id)
+            return
+        self.db.add(
+            ProductBarcode(
+                product_id=product.id,
+                barcode=barcode,
+                source="import",
+                is_primary=not self._has_active_barcode(product.id),
+                is_active=True,
+            )
+        )
+
+    def _deactivate_conflicting_barcodes(self, product_id: int, barcode: str) -> None:
+        for existing in self.db.scalars(
+            select(ProductBarcode).where(
+                ProductBarcode.product_id != product_id,
+                ProductBarcode.barcode == barcode,
+                ProductBarcode.deleted_at.is_(None),
+                ProductBarcode.is_active.is_(True),
+            )
+        ):
+            existing.is_active = False
+            existing.is_primary = False
+
+    def _has_active_barcode(self, product_id: int) -> bool:
         return (
             self.db.scalar(
                 select(ProductBarcode.id).where(
                     ProductBarcode.product_id == product_id,
-                    ProductBarcode.barcode == barcode,
                     ProductBarcode.deleted_at.is_(None),
+                    ProductBarcode.is_active.is_(True),
                 )
             )
             is not None
@@ -582,6 +625,12 @@ class ImportService:
             mapping_keys.append(("name", converter_type, normalized_name, product.id))
         if seen is not None and any(key in seen for key in mapping_keys):
             return False
+        self._deactivate_conflicting_product_mappings(
+            converter_type,
+            product.id,
+            normalized_barcode,
+            normalized_item_code,
+        )
 
         match_conditions = []
         if normalized_item_code:
@@ -620,6 +669,31 @@ class ImportService:
         if seen is not None:
             seen.update(mapping_keys)
         return True
+
+    def _deactivate_conflicting_product_mappings(
+        self,
+        converter_type: str,
+        product_id: int,
+        normalized_barcode: str | None,
+        normalized_item_code: str | None,
+    ) -> None:
+        match_conditions = []
+        if normalized_barcode:
+            match_conditions.append(ProductMapping.normalized_barcode == normalized_barcode)
+        if normalized_item_code:
+            match_conditions.append(ProductMapping.normalized_item_code == normalized_item_code)
+        if not match_conditions:
+            return
+        for mapping in self.db.scalars(
+            select(ProductMapping).where(
+                ProductMapping.converter_type == converter_type,
+                ProductMapping.product_id != product_id,
+                ProductMapping.is_active.is_(True),
+                ProductMapping.deleted_at.is_(None),
+                or_(*match_conditions),
+            )
+        ):
+            mapping.is_active = False
 
     def _find_client(self, client_code: str | None, name: str | None) -> Client | None:
         if client_code:

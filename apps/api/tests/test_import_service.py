@@ -111,6 +111,87 @@ async def test_import_products_updates_existing_item_code_without_case_sensitivi
 
 
 @pytest.mark.asyncio
+async def test_import_products_prefers_item_code_and_moves_conflicting_barcode(
+    db_session: Session,
+) -> None:
+    wrong_product = Product(item_code="ERP-WRONG", name="Wrong product", is_active=True)
+    correct_product = Product(item_code="ERP-CORRECT", name="Old name", is_active=True)
+    db_session.add_all([wrong_product, correct_product])
+    db_session.flush()
+    wrong_barcode = ProductBarcode(
+        product_id=wrong_product.id,
+        barcode="1234567890123",
+        source="import",
+        is_primary=True,
+        is_active=True,
+    )
+    db_session.add(wrong_barcode)
+    db_session.flush()
+    upload = _upload_workbook(
+        "PITON CONVERT.xlsx",
+        {
+            "convert": [
+                ["SKU_NO", "BARCODE", "Name"],
+                ["ERP-CORRECT", "1234567890123", "Correct product"],
+            ],
+        },
+    )
+
+    result = await ImportService(db_session).import_products(upload)
+    db_session.flush()
+
+    active_barcode = db_session.scalar(
+        select(ProductBarcode).where(
+            ProductBarcode.barcode == "1234567890123",
+            ProductBarcode.is_active.is_(True),
+        )
+    )
+    assert result["inserted"] == 0
+    assert result["updated"] == 1
+    assert correct_product.name == "Correct product"
+    assert wrong_barcode.is_active is False
+    assert active_barcode is not None
+    assert active_barcode.product_id == correct_product.id
+
+
+@pytest.mark.asyncio
+async def test_import_products_does_not_let_weak_numeric_code_steal_barcode_owner(
+    db_session: Session,
+) -> None:
+    code_product = Product(item_code="202", name="Different product", is_active=True)
+    barcode_product = Product(item_code=None, name="Old barcode product", is_active=True)
+    db_session.add_all([code_product, barcode_product])
+    db_session.flush()
+    db_session.add(
+        ProductBarcode(
+            product_id=barcode_product.id,
+            barcode="4823077624285",
+            source="import",
+            is_primary=True,
+            is_active=True,
+        )
+    )
+    db_session.flush()
+    upload = _upload_workbook(
+        "PITON CONVERT.xlsx",
+        {
+            "convert": [
+                ["SKU_NO", "BARCODE", "Name"],
+                ["202", "4823077624285", "Roshen Chocolateria"],
+            ],
+        },
+    )
+
+    result = await ImportService(db_session).import_products(upload)
+    db_session.flush()
+
+    assert result["inserted"] == 0
+    assert result["updated"] == 1
+    assert code_product.name == "Different product"
+    assert barcode_product.name == "Roshen Chocolateria"
+
+
+@pytest.mark.asyncio
 async def test_import_products_keeps_real_human_name(db_session: Session) -> None:
     upload = _upload_workbook(
         "PITON CONVERT.xlsx",

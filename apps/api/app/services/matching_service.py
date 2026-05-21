@@ -177,7 +177,7 @@ class MatchingService:
 
     def _find_product_match(self, converter_type: str, item: OrderItem) -> ProductMatch | None:
         if item.normalized_barcode:
-            mapped = self.db.scalar(
+            mapped = self._single_product_mapping(
                 select(ProductMapping)
                 .join(Product, ProductMapping.product_id == Product.id)
                 .where(
@@ -195,23 +195,12 @@ class MatchingService:
                     conversion_multiplier=self._product_multiplier(mapped.product),
                 )
 
-            by_barcode = self.db.scalar(
-                select(Product)
-                .join(ProductBarcode, ProductBarcode.product_id == Product.id)
-                .where(
-                    ProductBarcode.barcode == item.normalized_barcode,
-                    self._trusted_barcode_condition(),
-                    ProductBarcode.is_active.is_(True),
-                    ProductBarcode.deleted_at.is_(None),
-                    Product.deleted_at.is_(None),
-                    Product.is_active.is_(True),
-                )
-            )
+            by_barcode = self._single_product_by_barcode(item.normalized_barcode)
             if by_barcode is not None:
                 return ProductMatch(product=by_barcode, conversion_multiplier=self._product_multiplier(by_barcode))
 
         if item.raw_item_code:
-            mapped_by_item_code = self.db.scalar(
+            mapped_by_item_code = self._single_product_mapping(
                 select(ProductMapping)
                 .join(Product, ProductMapping.product_id == Product.id)
                 .where(
@@ -234,7 +223,7 @@ class MatchingService:
                 return ProductMatch(product=by_code, conversion_multiplier=self._product_multiplier(by_code))
 
         if item.normalized_name:
-            mapped_by_name = self.db.scalar(
+            mapped_by_name = self._single_product_mapping(
                 select(ProductMapping)
                 .join(Product, ProductMapping.product_id == Product.id)
                 .where(
@@ -267,6 +256,12 @@ class MatchingService:
             raise ValueError("Order item or product not found.")
         order = self.db.get(Order, item.order_id)
         multiplier = self._multiplier(conversion_multiplier or item.conversion_multiplier)
+        self._deactivate_conflicting_product_mappings(
+            order.converter_type if order else "",
+            product.id,
+            item.normalized_barcode,
+            normalize_key(item.raw_item_code),
+        )
         product.conversion_multiplier = multiplier
         mapping = ProductMapping(
             converter_type=order.converter_type if order else "",
@@ -291,6 +286,31 @@ class MatchingService:
         item.source_payload = {**(item.source_payload or {}), "manual_conversion_multiplier": str(multiplier)}
         item.status = OrderItemStatus.RESOLVED.value
         item.error_message = None
+
+    def _deactivate_conflicting_product_mappings(
+        self,
+        converter_type: str,
+        product_id: int,
+        normalized_barcode: str | None,
+        normalized_item_code: str | None,
+    ) -> None:
+        match_conditions = []
+        if normalized_barcode:
+            match_conditions.append(ProductMapping.normalized_barcode == normalized_barcode)
+        if normalized_item_code:
+            match_conditions.append(ProductMapping.normalized_item_code == normalized_item_code)
+        if not match_conditions:
+            return
+        for mapping in self.db.scalars(
+            select(ProductMapping).where(
+                ProductMapping.converter_type == converter_type,
+                ProductMapping.product_id != product_id,
+                ProductMapping.is_active.is_(True),
+                ProductMapping.deleted_at.is_(None),
+                or_(*match_conditions),
+            )
+        ):
+            mapping.is_active = False
 
     def update_item_multiplier(self, order_item_id: int, conversion_multiplier: Decimal | None) -> None:
         item = self.db.get(OrderItem, order_item_id)
@@ -387,6 +407,28 @@ class MatchingService:
     @staticmethod
     def _trusted_barcode_condition():
         return or_(ProductBarcode.source.is_(None), ProductBarcode.source != "smoke")
+
+    def _single_product_mapping(self, stmt) -> ProductMapping | None:
+        matches = list(self.db.scalars(stmt.limit(2)))
+        return matches[0] if len(matches) == 1 else None
+
+    def _single_product_by_barcode(self, barcode: str) -> Product | None:
+        matches = list(
+            self.db.scalars(
+                select(Product)
+                .join(ProductBarcode, ProductBarcode.product_id == Product.id)
+                .where(
+                    ProductBarcode.barcode == barcode,
+                    self._trusted_barcode_condition(),
+                    ProductBarcode.is_active.is_(True),
+                    ProductBarcode.deleted_at.is_(None),
+                    Product.deleted_at.is_(None),
+                    Product.is_active.is_(True),
+                )
+                .limit(2)
+            )
+        )
+        return matches[0] if len(matches) == 1 else None
 
     def _single_product_by_item_code(self, item_code: str) -> Product | None:
         normalized_item_code = normalize_text(item_code).casefold()

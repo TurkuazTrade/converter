@@ -26,6 +26,17 @@ def test_matching_resolves_product_by_barcode(db_session: Session) -> None:
     assert item.status == OrderItemStatus.RESOLVED.value
 
 
+def test_matching_leaves_duplicate_active_barcode_unresolved(db_session: Session) -> None:
+    _product(db_session, item_code="ERP-1", barcode="1234567890123")
+    _product(db_session, item_code="ERP-2", barcode="1234567890123")
+    order, item = _order_with_item(db_session, barcode="1234567890123")
+
+    MatchingService(db_session).match_order(order.id)
+
+    assert item.product_id is None
+    assert item.status == OrderItemStatus.UNRESOLVED.value
+
+
 def test_matching_ignores_smoke_barcode_and_uses_item_code(db_session: Session) -> None:
     smoke_product = _product(db_session, item_code="TEST-PRODUCT-001", name="Test product")
     db_session.add(
@@ -337,6 +348,46 @@ def test_save_client_mapping_deactivates_conflicting_client_mapping(
     assert old_mapping.is_active is False
     assert new_mapping is not None
     assert order.client_id == correct_client.id
+
+
+def test_save_product_mapping_deactivates_conflicting_product_mapping(
+    db_session: Session,
+) -> None:
+    wrong_product = _product(db_session, item_code="ERP-WRONG")
+    correct_product = _product(db_session, item_code="ERP-CORRECT")
+    user = User(
+        email="product-map@example.com",
+        hashed_password="hash",
+        full_name="Product Mapper",
+        role="operator",
+        is_active=True,
+    )
+    db_session.add(user)
+    db_session.flush()
+    old_mapping = ProductMapping(
+        converter_type="piton",
+        raw_barcode="777",
+        normalized_barcode="777",
+        raw_item_code="NET-777",
+        normalized_item_code="net777",
+        product_id=wrong_product.id,
+        is_active=True,
+    )
+    order, item = _order_with_item(db_session, barcode="777")
+    item.raw_item_code = "NET-777"
+    db_session.add(old_mapping)
+    db_session.flush()
+
+    MatchingService(db_session).save_product_mapping(item.id, correct_product.id, user_id=user.id)
+
+    new_mapping = db_session.scalar(
+        select(ProductMapping).where(
+            ProductMapping.product_id == correct_product.id,
+            ProductMapping.normalized_barcode == "777",
+        )
+    )
+    assert old_mapping.is_active is False
+    assert new_mapping is not None
 
 
 def test_backfill_product_names_from_order_items(db_session: Session) -> None:
