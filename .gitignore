@@ -12,6 +12,7 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .env
+AGENTS.md
 data/app.db
 data/app.db-*
 data/storage/source/*
