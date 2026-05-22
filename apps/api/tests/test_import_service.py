@@ -85,6 +85,49 @@ async def test_import_products_skips_duplicate_mappings_in_same_file(db_session:
 
 
 @pytest.mark.asyncio
+async def test_import_products_reuses_product_for_duplicate_barcode_without_item_code(
+    db_session: Session,
+) -> None:
+    upload = _upload_workbook(
+        "PITON CONVERT.xlsx",
+        {
+            "convert": [
+                ["BARCODE", "Name", "Conv. Quantity"],
+                ["4870235681857", "Чипсы Grizzly волнистые сладкий чили 110г п/п Казахстан 12", 1],
+                ["4870235681857", "Чипсы Grizzly волнистые сладкий чили 110г п/п Казахстан 12", 1],
+            ],
+        },
+    )
+
+    result = await ImportService(db_session).import_products(upload)
+    db_session.flush()
+
+    products = list(
+        db_session.scalars(
+            select(Product).where(
+                Product.name == "Чипсы Grizzly волнистые сладкий чили 110г п/п Казахстан 12"
+            )
+        )
+    )
+    barcodes = list(db_session.scalars(select(ProductBarcode).where(ProductBarcode.barcode == "4870235681857")))
+    mappings = list(
+        db_session.scalars(
+            select(ProductMapping).where(
+                ProductMapping.converter_type == "piton",
+                ProductMapping.normalized_barcode == "4870235681857",
+            )
+        )
+    )
+    assert result["inserted"] == 1
+    assert result["updated"] == 1
+    assert result["mappings_inserted"] == 1
+    assert len(products) == 1
+    assert len(barcodes) == 1
+    assert len(mappings) == 1
+    assert mappings[0].product_id == products[0].id
+
+
+@pytest.mark.asyncio
 async def test_import_products_updates_existing_item_code_without_case_sensitivity(db_session: Session) -> None:
     product = Product(item_code="ERP-Case-1", name="Old name", is_active=True)
     db_session.add(product)

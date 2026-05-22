@@ -53,6 +53,7 @@ class ResolvedOrderExport:
     document_date: date
     fiche_no: str
     lines: list[ExportLine]
+    order_id: int | None = None
     warehouse_no: str | int | None = None
     problems: list[ExportProblemLine] | None = None
     product_type_filter: str | None = None
@@ -162,11 +163,12 @@ class ExportService:
             "Converter",
         )
         sequence = max(order.sequence_number, 0)
+        order_id = f" id-{order.order_id}" if order.order_id is not None else ""
         suffix = ""
         if order.product_type_filter:
             suffix = f" {self._filename_safe_text(order.product_type_filter, 'type')}"
         export_date = order.document_date.isoformat()
-        return f"{converter} zakaz {export_date} {sequence:04d}{suffix}.xlsx"
+        return f"{converter} zakaz {export_date}{order_id} {sequence:04d}{suffix}.xlsx"
 
     @staticmethod
     def _filename_converter_prefix(converter_type: str) -> str:
@@ -264,6 +266,7 @@ class ExportService:
             document_date=document_date,
             fiche_no=self._fiche_no_for_sequence(sequence),
             lines=lines,
+            order_id=order.id,
             warehouse_no=self._warehouse_no_from_snapshot(order.parsed_snapshot),
             problems=problems,
             product_type_filter=product_type_filter,
@@ -441,7 +444,7 @@ class ExportService:
         }
         template_row_height = worksheet.row_dimensions[start_row].height
         clearable_columns = set(layout.clearable_columns)
-        if layout.unit_price_col is not None and any(line.unit_price is not None for line in lines):
+        if layout.unit_price_col is not None:
             clearable_columns.add(layout.unit_price_col)
 
         for row in range(start_row, row_end + 1):

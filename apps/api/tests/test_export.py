@@ -108,6 +108,54 @@ def test_export_order_uses_warehouse_no_from_snapshot(db_session: Session) -> No
     workbook.close()
 
 
+def test_export_keeps_unit_price_headers_once_per_product_type_block() -> None:
+    service = ExportService(template_path=TEMPLATE_PATH)
+    lines = [
+        ExportLine(item_code=f"FOOD-{index:02}", item_name=f"Food {index}", quantity=index, product_type="food")
+        for index in range(1, 4)
+    ]
+    lines.extend(
+        ExportLine(
+            item_code=f"NONFOOD-{index:02}",
+            item_name=f"Nonfood {index}",
+            quantity=index,
+            product_type="nonfood",
+        )
+        for index in range(1, 24)
+    )
+    lines.extend(
+        ExportLine(item_code=f"ROSHEN-{index:02}", item_name=f"Roshen {index}", quantity=index, product_type="roshen")
+        for index in range(1, 4)
+    )
+    content = service.build_export_bytes(
+        ResolvedOrderExport(
+            converter_type="piton",
+            client_code="100245",
+            document_date=date(2026, 5, 14),
+            fiche_no="0000000001",
+            lines=lines,
+        )
+    )
+
+    workbook = openpyxl.load_workbook(BytesIO(content), data_only=True)
+    sheet = workbook.active
+    unit_price_cells = [
+        cell.coordinate
+        for row in sheet.iter_rows()
+        for cell in row
+        if cell.value == "Unit Price (Tenge)"
+    ]
+    unit_cells = [
+        cell.coordinate
+        for row in sheet.iter_rows()
+        for cell in row
+        if cell.value == "Unit"
+    ]
+    assert unit_price_cells == ["E5", "E14", "E43"]
+    assert unit_cells == ["C5", "C14", "C43"]
+    workbook.close()
+
+
 def test_export_lines_are_sorted_by_item_code() -> None:
     service = ExportService(template_path=TEMPLATE_PATH)
     content = service.build_export_bytes(
@@ -142,11 +190,12 @@ def test_export_filename_is_operator_friendly() -> None:
             document_date=date(2026, 5, 14),
             fiche_no="0000000001",
             lines=[],
+            order_id=48,
             sequence_number=20,
         )
     )
 
-    assert filename == "AsiaRetail zakaz 2026-05-14 0020.xlsx"
+    assert filename == "AsiaRetail zakaz 2026-05-14 id-48 0020.xlsx"
 
 
 def test_export_order_uses_resolved_product_and_client(db_session: Session) -> None:
@@ -170,7 +219,7 @@ def test_export_order_uses_resolved_product_and_client(db_session: Session) -> N
     assert sheet["D6"].value == 4
     assert order.status == OrderStatus.EXPORTED.value
     assert order.export_file_id is None
-    assert result.filename == f"Piton zakaz {date.today().isoformat()} 0000.xlsx"
+    assert result.filename == f"Piton zakaz {date.today().isoformat()} id-{order.id} 0000.xlsx"
     workbook.close()
 
 
@@ -183,8 +232,8 @@ def test_repeated_export_uses_next_global_fiche_sequence(db_session: Session) ->
 
     first_workbook = openpyxl.load_workbook(BytesIO(first.content), data_only=True)
     second_workbook = openpyxl.load_workbook(BytesIO(second.content), data_only=True)
-    assert first.filename == f"Piton zakaz {date.today().isoformat()} 0000.xlsx"
-    assert second.filename == f"Piton zakaz {date.today().isoformat()} 0005.xlsx"
+    assert first.filename == f"Piton zakaz {date.today().isoformat()} id-{order.id} 0000.xlsx"
+    assert second.filename == f"Piton zakaz {date.today().isoformat()} id-{order.id} 0005.xlsx"
     assert first_workbook.active["B4"].value == "KA0000000000"
     assert second_workbook.active["B4"].value == "KA0000000005"
     assert (db_session.get(Order, order.id).events[-1].payload or {})["export_sequence_next"] == 10
@@ -208,7 +257,7 @@ def test_export_sequence_counts_existing_export_events(db_session: Session) -> N
     result = ExportService(template_path=TEMPLATE_PATH).export_order(db_session, order.id)
 
     workbook = openpyxl.load_workbook(BytesIO(result.content), data_only=True)
-    assert result.filename == f"Piton zakaz {date.today().isoformat()} 0050.xlsx"
+    assert result.filename == f"Piton zakaz {date.today().isoformat()} id-{order.id} 0050.xlsx"
     assert workbook.active["B4"].value == "KA0000000050"
     workbook.close()
 
@@ -231,8 +280,8 @@ def test_export_sequence_is_global_across_orders(db_session: Session) -> None:
 
     first_workbook = openpyxl.load_workbook(BytesIO(first.content), data_only=True)
     second_workbook = openpyxl.load_workbook(BytesIO(second.content), data_only=True)
-    assert first.filename == f"Piton zakaz {date.today().isoformat()} 0000.xlsx"
-    assert second.filename == f"Piton zakaz {date.today().isoformat()} 0005.xlsx"
+    assert first.filename == f"Piton zakaz {date.today().isoformat()} id-{first_order.id} 0000.xlsx"
+    assert second.filename == f"Piton zakaz {date.today().isoformat()} id-{second_order.id} 0005.xlsx"
     assert first_workbook.active["B4"].value == "KA0000000000"
     assert second_workbook.active["B4"].value == "KA0000000005"
     first_workbook.close()
@@ -288,11 +337,11 @@ def test_next_export_sequence_skips_all_blocks_from_previous_full_export(db_sess
 
     first_workbook = openpyxl.load_workbook(BytesIO(first.content), data_only=True)
     second_workbook = openpyxl.load_workbook(BytesIO(second.content), data_only=True)
-    assert first.filename == f"Piton zakaz {date.today().isoformat()} 0000.xlsx"
+    assert first.filename == f"Piton zakaz {date.today().isoformat()} id-{order.id} 0000.xlsx"
     assert first_workbook["1"]["B4"].value == "KA0000000000"
     assert first_workbook["1"]["B11"].value == "KA0000000005"
     assert first_workbook["1"]["B18"].value == "KA0000000010"
-    assert second.filename == f"Piton zakaz {date.today().isoformat()} 0015.xlsx"
+    assert second.filename == f"Piton zakaz {date.today().isoformat()} id-{order.id} 0015.xlsx"
     assert second_workbook["1"]["B4"].value == "KA0000000015"
     first_workbook.close()
     second_workbook.close()

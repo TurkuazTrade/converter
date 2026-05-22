@@ -108,11 +108,6 @@ export function OrdersHistoryPage() {
                         Excel
                       </button>
                     )}
-                    {order.export_downloads && Object.keys(order.export_downloads).length > 0 && (
-                      <span className="text-xs text-emerald-300">
-                        есть скачанные виды
-                      </span>
-                    )}
                   </td>
                 </tr>
               ))}

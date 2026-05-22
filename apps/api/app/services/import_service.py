@@ -88,6 +88,8 @@ class ImportService:
         dictionary_service = ProductDictionaryService(self.db)
         seen_mappings: set[tuple[str, str, str, int]] = set()
         seen_barcodes: set[tuple[int, str]] = set()
+        seen_products_by_barcode: dict[str, Product] = {}
+        seen_products_by_name: dict[str, Product] = {}
         for row in rows:
             barcode = normalize_barcode(row.get("barcode"))
             raw_item_code = normalize_item_code(row.get("raw_item_code"))
@@ -106,6 +108,7 @@ class ImportService:
                 barcode=barcode,
                 raw_item_code=raw_item_code,
             )
+            name_key = normalize_key(explicit_name)
             name = explicit_name or ""
             price_code = normalize_item_code(row.get("price_code"))
             conversion_multiplier = self._conversion_multiplier(row.get("conversion_quantity"))
@@ -124,11 +127,17 @@ class ImportService:
                     )
                 )
                 continue
-            product = self._find_product(
-                barcode=barcode,
-                item_code=item_code,
-                explicit_name=explicit_name,
-            )
+            product = None
+            if barcode:
+                product = seen_products_by_barcode.get(barcode)
+            if product is None and name_key and not item_code:
+                product = seen_products_by_name.get(name_key)
+            if product is None:
+                product = self._find_product(
+                    barcode=barcode,
+                    item_code=item_code,
+                    explicit_name=explicit_name,
+                )
             if product is None:
                 product = Product(
                     item_code=item_code,
@@ -157,6 +166,10 @@ class ImportService:
             if barcode_key and barcode_key not in seen_barcodes:
                 self._ensure_product_barcode(product, barcode)
                 seen_barcodes.add(barcode_key)
+            if barcode:
+                seen_products_by_barcode[barcode] = product
+            if name_key and not item_code:
+                seen_products_by_name[name_key] = product
             if detected_converter and self._save_product_mapping(
                 converter_type=detected_converter,
                 product=product,
