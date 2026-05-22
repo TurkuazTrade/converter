@@ -223,6 +223,20 @@ def test_export_order_uses_resolved_product_and_client(db_session: Session) -> N
     workbook.close()
 
 
+def test_export_rounds_multiplied_quantity_down(db_session: Session) -> None:
+    order = _resolved_order(db_session)
+    order.items[0].source_quantity = Decimal("1")
+    order.items[0].conversion_multiplier = Decimal("2.9")
+    order.items[0].quantity = Decimal("2.9")
+    db_session.flush()
+
+    result = ExportService(template_path=TEMPLATE_PATH).export_order(db_session, order.id)
+
+    workbook = openpyxl.load_workbook(BytesIO(result.content), data_only=True)
+    assert workbook.active["D6"].value == 2
+    workbook.close()
+
+
 def test_repeated_export_uses_next_global_fiche_sequence(db_session: Session) -> None:
     order = _resolved_order(db_session)
     db_session.flush()

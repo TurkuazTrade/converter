@@ -5,6 +5,7 @@ from collections import defaultdict
 from copy import copy
 from dataclasses import dataclass, replace
 from datetime import date
+from decimal import Decimal, ROUND_FLOOR
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
@@ -246,7 +247,7 @@ class ExportService:
                 ExportLine(
                     item_code=item_code,
                     item_name=self._item_name_for_export(item, item_code),
-                    quantity=float(item.quantity),
+                    quantity=float(self._export_quantity(item.quantity)),
                     product_type=item.product.product_type,
                     warehouse_no=(
                         item.product.product_type_ref.warehouse_no
@@ -345,6 +346,10 @@ class ExportService:
         if not text:
             return 0
         return int(text) if text.isdigit() else text
+
+    @staticmethod
+    def _export_quantity(value: Decimal) -> Decimal:
+        return value.to_integral_value(rounding=ROUND_FLOOR)
 
     @staticmethod
     def _warehouse_no_for_product_type_block(
