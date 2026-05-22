@@ -199,6 +199,13 @@ class MatchingService:
             if by_barcode is not None:
                 return ProductMatch(product=by_barcode, conversion_multiplier=self._product_multiplier(by_barcode))
 
+            by_barcode_as_item_code = self._single_product_by_item_code(item.normalized_barcode)
+            if by_barcode_as_item_code is not None:
+                return ProductMatch(
+                    product=by_barcode_as_item_code,
+                    conversion_multiplier=self._product_multiplier(by_barcode_as_item_code),
+                )
+
         if item.raw_item_code:
             mapped_by_item_code = self._single_product_mapping(
                 select(ProductMapping)

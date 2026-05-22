@@ -61,6 +61,25 @@ def test_matching_ignores_smoke_barcode_and_uses_item_code(db_session: Session) 
     assert real_product.name == "Real source name"
 
 
+def test_matching_treats_unmatched_barcode_as_item_code(db_session: Session) -> None:
+    product = _product(
+        db_session,
+        item_code="201082060170407591090021",
+        name="КОНФЕТЫ FLAKSI КОКОС ВЕС",
+    )
+    order, item = _order_with_item(
+        db_session,
+        barcode="201082060170407591090021",
+        raw_name="7567 FLAKSI coconut 8*500gr",
+    )
+
+    MatchingService(db_session).match_order(order.id)
+
+    assert item.product_id == product.id
+    assert item.item_code == "201082060170407591090021"
+    assert item.status == OrderItemStatus.RESOLVED.value
+
+
 def test_matching_resolves_product_by_item_code_without_case_sensitivity(db_session: Session) -> None:
     product = _product(db_session, item_code="ERP-Case-1", name="")
     order, item = _order_with_item(db_session, barcode=None, raw_name="Case source name")

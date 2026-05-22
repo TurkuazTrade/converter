@@ -192,6 +192,97 @@ async def test_import_products_does_not_let_weak_numeric_code_steal_barcode_owne
 
 
 @pytest.mark.asyncio
+async def test_import_products_does_not_overwrite_strong_product_from_weak_code_conflict(
+    db_session: Session,
+) -> None:
+    lollipop = Product(
+        item_code="201082060160409291960001",
+        name="Карамель Roshen LolliPops йогуртовый вкус вес",
+        is_active=True,
+    )
+    db_session.add(lollipop)
+    db_session.flush()
+    wrong_barcode = ProductBarcode(
+        product_id=lollipop.id,
+        barcode="4823077632532",
+        source="import",
+        is_primary=True,
+        is_active=True,
+    )
+    db_session.add(wrong_barcode)
+    db_session.flush()
+    upload = _upload_workbook(
+        "PITON CONVERT.xlsx",
+        {
+            "convert": [
+                ["SKU_NO", "BARCODE", "Name"],
+                [
+                    "2010820",
+                    "4823077632532",
+                    "Шоколад Roshen подсоленный миндаль 85г",
+                ],
+            ],
+        },
+    )
+
+    result = await ImportService(db_session).import_products(upload)
+    db_session.flush()
+
+    active_barcode = db_session.scalar(
+        select(ProductBarcode).where(
+            ProductBarcode.barcode == "4823077632532",
+            ProductBarcode.is_active.is_(True),
+        )
+    )
+    chocolate_name = "Шоколад Roshen подсоленный миндаль 85г"
+    chocolate = db_session.scalar(select(Product).where(Product.name == chocolate_name))
+    assert result["inserted"] == 1
+    assert result["updated"] == 0
+    assert lollipop.name == "Карамель Roshen LolliPops йогуртовый вкус вес"
+    assert wrong_barcode.is_active is False
+    assert chocolate is not None
+    assert chocolate.item_code is None
+    assert active_barcode is not None
+    assert active_barcode.product_id == chocolate.id
+
+
+@pytest.mark.asyncio
+async def test_import_products_reuses_canonical_name_when_duplicates_already_exist(
+    db_session: Session,
+) -> None:
+    canonical = Product(name="Батончик Roshen Toffler 41г", product_type="roshen", is_active=True)
+    duplicate = Product(name="Батончик Roshen Toffler 41г", is_active=True)
+    db_session.add_all([canonical, duplicate])
+    db_session.flush()
+    upload = _upload_workbook(
+        "PITON CONVERT.xlsx",
+        {
+            "convert": [
+                ["SKU_NO", "Name"],
+                ["2010820", "Батончик Roshen Toffler 41г"],
+            ],
+        },
+    )
+
+    result = await ImportService(db_session).import_products(upload)
+    db_session.flush()
+
+    products = list(db_session.scalars(select(Product).where(Product.name == "Батончик Roshen Toffler 41г")))
+    mapping = db_session.scalar(
+        select(ProductMapping).where(
+            ProductMapping.converter_type == "piton",
+            ProductMapping.normalized_name == "батончикroshentoffler41г",
+            ProductMapping.is_active.is_(True),
+        )
+    )
+    assert result["inserted"] == 0
+    assert result["updated"] == 1
+    assert len(products) == 2
+    assert mapping is not None
+    assert mapping.product_id == canonical.id
+
+
+@pytest.mark.asyncio
 async def test_import_products_keeps_real_human_name(db_session: Session) -> None:
     upload = _upload_workbook(
         "PITON CONVERT.xlsx",

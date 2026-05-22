@@ -91,10 +91,18 @@ class ImportService:
         for row in rows:
             barcode = normalize_barcode(row.get("barcode"))
             raw_item_code = normalize_item_code(row.get("raw_item_code"))
-            item_code = self._first_item_code(row)
+            raw_product_item_code = self._first_item_code(row)
+            item_code = (
+                None
+                if (
+                    detected_converter == "piton"
+                    and self._is_weak_numeric_item_code(raw_product_item_code)
+                )
+                else raw_product_item_code
+            )
             explicit_name = self._human_product_name(
                 row.get("name"),
-                item_code=item_code,
+                item_code=raw_product_item_code,
                 barcode=barcode,
                 raw_item_code=raw_item_code,
             )
@@ -116,7 +124,11 @@ class ImportService:
                     )
                 )
                 continue
-            product = self._find_product(barcode=barcode, item_code=item_code)
+            product = self._find_product(
+                barcode=barcode,
+                item_code=item_code,
+                explicit_name=explicit_name,
+            )
             if product is None:
                 product = Product(
                     item_code=item_code,
@@ -499,7 +511,12 @@ class ImportService:
         detected = self.registry.detect_converter(filename)
         return detected.value if detected else None
 
-    def _find_product(self, barcode: str | None, item_code: str | None) -> Product | None:
+    def _find_product(
+        self,
+        barcode: str | None,
+        item_code: str | None,
+        explicit_name: str | None = None,
+    ) -> Product | None:
         if item_code and not self._is_weak_numeric_item_code(item_code):
             product = self._single_product_by_item_code(item_code)
             if product is not None:
@@ -518,14 +535,22 @@ class ImportService:
                 )
             )
             if product is not None:
+                if self._product_row_conflicts(
+                    product,
+                    item_code=item_code,
+                    explicit_name=explicit_name,
+                ):
+                    return self._canonical_product_by_name(explicit_name)
                 return product
         if item_code:
             return self._single_product_by_item_code(item_code)
+        if explicit_name:
+            return self._canonical_product_by_name(explicit_name)
         return None
 
     @staticmethod
-    def _is_weak_numeric_item_code(item_code: str) -> bool:
-        return item_code.isdigit() and len(item_code) <= 7
+    def _is_weak_numeric_item_code(item_code: str | None) -> bool:
+        return bool(item_code) and item_code.isdigit() and len(item_code) <= 7
 
     def _can_assign_item_code(self, product: Product, item_code: str) -> bool:
         if not self._is_weak_numeric_item_code(item_code):
@@ -560,6 +585,87 @@ class ImportService:
                 if normalize_text(product.item_code).casefold() == normalized_item_code
             ]
         return matches[0] if len(matches) == 1 else None
+
+    def _canonical_product_by_name(self, name: str | None) -> Product | None:
+        normalized_name = normalize_key(name)
+        if not normalized_name:
+            return None
+        matches = [
+            product
+            for product in self.db.scalars(
+                select(Product).where(
+                    Product.deleted_at.is_(None),
+                    Product.is_active.is_(True),
+                )
+            )
+            if normalize_key(product.name) == normalized_name
+        ]
+        if not matches:
+            return None
+        return sorted(matches, key=self._product_canonical_rank)[0]
+
+    @staticmethod
+    def _product_canonical_rank(product: Product) -> tuple[int, int, int]:
+        return (
+            0 if normalize_item_code(product.item_code) else 1,
+            0 if normalize_product_type(product.product_type) else 1,
+            product.id,
+        )
+
+    @classmethod
+    def _product_row_conflicts(
+        cls,
+        product: Product,
+        *,
+        item_code: str | None,
+        explicit_name: str | None,
+    ) -> bool:
+        product_item_code = normalize_item_code(product.item_code)
+        if not product_item_code:
+            return False
+        if item_code and normalize_item_code(item_code) == product_item_code:
+            return False
+        return not cls._product_names_compatible(product.name, explicit_name)
+
+    @staticmethod
+    def _product_names_compatible(current_name: str | None, incoming_name: str | None) -> bool:
+        current_key = normalize_key(current_name)
+        incoming_key = normalize_key(incoming_name)
+        if not current_key or not incoming_key or current_key == incoming_key:
+            return True
+
+        stop_words = {
+            "roshen",
+            "рошен",
+            "вес",
+            "шт",
+            "гр",
+            "г",
+            "шок",
+        }
+        current_tokens = {
+            token
+            for token in re.findall(
+                r"[0-9a-zа-я]+",
+                normalize_text(current_name).casefold().replace("ё", "е"),
+            )
+            if len(token) > 2 and token not in stop_words
+        }
+        incoming_tokens = {
+            token
+            for token in re.findall(
+                r"[0-9a-zа-я]+",
+                normalize_text(incoming_name).casefold().replace("ё", "е"),
+            )
+            if len(token) > 2 and token not in stop_words
+        }
+        if not current_tokens or not incoming_tokens:
+            return False
+        overlap = current_tokens & incoming_tokens
+        return (
+            len(overlap) >= 2
+            or len(overlap) / min(len(current_tokens), len(incoming_tokens)) >= 0.5
+        )
 
     def _ensure_product_barcode(self, product: Product, barcode: str) -> None:
         self._deactivate_conflicting_barcodes(product.id, barcode)
@@ -640,6 +746,7 @@ class ImportService:
             product.id,
             normalized_barcode,
             normalized_item_code,
+            normalized_name,
         )
 
         match_conditions = []
@@ -686,12 +793,15 @@ class ImportService:
         product_id: int,
         normalized_barcode: str | None,
         normalized_item_code: str | None,
+        normalized_name: str | None,
     ) -> None:
         match_conditions = []
         if normalized_barcode:
             match_conditions.append(ProductMapping.normalized_barcode == normalized_barcode)
         if normalized_item_code:
             match_conditions.append(ProductMapping.normalized_item_code == normalized_item_code)
+        if normalized_name:
+            match_conditions.append(ProductMapping.normalized_name == normalized_name)
         if not match_conditions:
             return
         for mapping in self.db.scalars(
