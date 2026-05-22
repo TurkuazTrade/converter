@@ -163,15 +163,19 @@ export function UploadOrderPage() {
                   Скачать шаблон заказа
                 </button>
               </div>
-              <div className="flex flex-wrap gap-3">
+              <div className="export-type-list">
                 {productTypes.map((typeRule) => (
-                  <label key={typeRule.product_type} className="flex items-center gap-2 text-sm text-slate-300">
+                  <label
+                    key={typeRule.product_type}
+                    className={`export-type-option${typeRule.exclude_from_export ? ' export-type-option--checked' : ''}`}
+                  >
                     <input
                       type="checkbox"
                       checked={typeRule.exclude_from_export}
                       onChange={() => toggleTypeExportExclusion(typeRule)}
                     />
-                    {typeRule.product_type}
+                    <span className="export-type-option__box" aria-hidden="true" />
+                    <span className="export-type-option__label">{typeRule.product_type}</span>
                   </label>
                 ))}
               </div>

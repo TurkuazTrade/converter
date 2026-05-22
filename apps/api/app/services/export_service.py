@@ -31,6 +31,10 @@ class ExportLine:
     item_name: str | None
     quantity: float
     product_type: str | None = None
+    row_number: int | None = None
+    raw_item_code: str | None = None
+    raw_barcode: str | None = None
+    normalized_barcode: str | None = None
     warehouse_no: str | int | None = None
     unit: int | float = 1
     unit_price: float | None = None
@@ -39,8 +43,11 @@ class ExportLine:
 @dataclass(slots=True)
 class ExportProblemLine:
     row_number: int | None
+    item_code: str | None
+    item_name: str | None
     raw_item_code: str | None
     raw_barcode: str | None
+    normalized_barcode: str | None
     raw_name: str | None
     product_type: str | None
     quantity: float | None
@@ -54,6 +61,7 @@ class ResolvedOrderExport:
     document_date: date
     fiche_no: str
     lines: list[ExportLine]
+    client_name: str | None = None
     order_id: int | None = None
     warehouse_no: str | int | None = None
     problems: list[ExportProblemLine] | None = None
@@ -147,6 +155,7 @@ class ExportService:
 
             if order.problems:
                 self._write_problem_sheet(workbook, order.problems)
+            self._write_all_products_sheet(workbook, order, order.lines, order.problems or [])
 
             self._normalize_workbook_views(workbook)
 
@@ -168,8 +177,13 @@ class ExportService:
         suffix = ""
         if order.product_type_filter:
             suffix = f" {self._filename_safe_text(order.product_type_filter, 'type')}"
+        client_name = (
+            f" {self._filename_safe_text(order.client_name, 'client')}"
+            if order.client_name and order.client_name.strip()
+            else ""
+        )
         export_date = order.document_date.isoformat()
-        return f"{converter} zakaz {export_date}{order_id} {sequence:04d}{suffix}.xlsx"
+        return f"{export_date}{order_id} {converter} zakaz {sequence:04d}{suffix}{client_name}.xlsx"
 
     @staticmethod
     def _filename_converter_prefix(converter_type: str) -> str:
@@ -210,6 +224,7 @@ class ExportService:
         if order.client is None or not order.client.client_code:
             raise ValueError("Order is not ready to export: client is not resolved.")
         client_code = order.client.client_code
+        client_name = order.client.name
 
         lines: list[ExportLine] = []
         problems: list[ExportProblemLine] = []
@@ -249,6 +264,10 @@ class ExportService:
                     item_name=self._item_name_for_export(item, item_code),
                     quantity=float(self._export_quantity(item.quantity)),
                     product_type=item.product.product_type,
+                    row_number=item.row_number,
+                    raw_item_code=item.raw_item_code,
+                    raw_barcode=item.raw_barcode,
+                    normalized_barcode=item.normalized_barcode,
                     warehouse_no=(
                         item.product.product_type_ref.warehouse_no
                         if item.product.product_type_ref is not None
@@ -267,6 +286,7 @@ class ExportService:
             document_date=document_date,
             fiche_no=self._fiche_no_for_sequence(sequence),
             lines=lines,
+            client_name=client_name,
             order_id=order.id,
             warehouse_no=self._warehouse_no_from_snapshot(order.parsed_snapshot),
             problems=problems,
@@ -542,6 +562,68 @@ class ExportService:
         worksheet.freeze_panes = "A2"
 
     @staticmethod
+    def _write_all_products_sheet(
+        workbook,
+        order: ResolvedOrderExport,
+        lines: list[ExportLine],
+        problems: list[ExportProblemLine],
+    ) -> None:
+        worksheet = workbook.create_sheet("Все товары")
+        worksheet.append([None, None, None, order.client_name or order.client_code, None, order.document_date])
+        worksheet["D1"].font = Font(bold=True)
+        worksheet["F1"].font = Font(bold=True)
+        worksheet["F1"].number_format = "dd/mm/yyyy"
+        headers = [
+            "Статус",
+            "Строка",
+            "Код товара",
+            "Наименование",
+            "Код сети",
+            "Штрихкод",
+            "Норм. штрихкод",
+            "Тип",
+            "Количество",
+            "Причина",
+        ]
+        worksheet.append(headers)
+        for line in ExportService._sorted_lines(lines):
+            worksheet.append(
+                [
+                    "Выгружается",
+                    line.row_number,
+                    line.item_code,
+                    line.item_name,
+                    line.raw_item_code,
+                    line.raw_barcode,
+                    line.normalized_barcode,
+                    line.product_type,
+                    line.quantity,
+                    None,
+                ]
+            )
+        for problem in problems:
+            worksheet.append(
+                [
+                    "Проблема",
+                    problem.row_number,
+                    problem.item_code,
+                    problem.item_name or problem.raw_name,
+                    problem.raw_item_code,
+                    problem.raw_barcode,
+                    problem.normalized_barcode,
+                    problem.product_type,
+                    problem.quantity,
+                    problem.reason,
+                ]
+            )
+        for cell in worksheet[2]:
+            cell.font = Font(bold=True)
+        widths = [14, 10, 24, 52, 22, 18, 18, 18, 14, 34]
+        for index, width in enumerate(widths, start=1):
+            worksheet.column_dimensions[openpyxl.utils.get_column_letter(index)].width = width
+        worksheet.freeze_panes = "A3"
+
+    @staticmethod
     def _normalize_workbook_views(workbook) -> None:
         for worksheet in workbook.worksheets:
             for selection in worksheet.sheet_view.selection:
@@ -550,10 +632,15 @@ class ExportService:
 
     @staticmethod
     def _problem_line(item: OrderItem, reason: str) -> ExportProblemLine:
+        product_item_code = item.product.item_code if item.product is not None else None
+        product_name = item.product.name if item.product is not None else None
         return ExportProblemLine(
             row_number=item.row_number,
+            item_code=product_item_code,
+            item_name=product_name,
             raw_item_code=item.raw_item_code,
             raw_barcode=item.raw_barcode,
+            normalized_barcode=item.normalized_barcode,
             raw_name=item.raw_name,
             product_type=item.product.product_type if item.product else None,
             quantity=float(item.quantity) if item.quantity is not None else None,

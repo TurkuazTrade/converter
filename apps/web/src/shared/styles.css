@@ -286,6 +286,64 @@ body {
   color: var(--app-text);
 }
 
+.export-type-list {
+  @apply flex flex-wrap gap-2;
+}
+
+.export-type-option {
+  background: color-mix(in srgb, var(--app-surface-muted) 78%, transparent);
+  border-color: var(--app-border);
+  color: var(--app-text-muted);
+  @apply relative inline-flex min-h-9 cursor-pointer select-none items-center gap-2 rounded-md border px-3 py-2 text-sm transition;
+}
+
+.export-type-option:hover {
+  border-color: color-mix(in srgb, var(--app-accent) 42%, var(--app-border));
+  color: var(--app-text);
+}
+
+.export-type-option--checked {
+  background: color-mix(in srgb, var(--app-accent) 22%, var(--app-surface-muted));
+  border-color: color-mix(in srgb, var(--app-accent) 62%, var(--app-border));
+  color: var(--app-text);
+}
+
+.export-type-option input {
+  @apply sr-only;
+}
+
+.export-type-option__box {
+  border-color: color-mix(in srgb, var(--app-text-muted) 72%, transparent);
+  background: color-mix(in srgb, var(--app-surface) 88%, transparent);
+  @apply relative h-4 w-4 shrink-0 rounded border transition;
+}
+
+.export-type-option__box::after {
+  content: "";
+  border-color: white;
+  transform: rotate(45deg) scale(0);
+  @apply absolute left-1 top-0.5 h-2.5 w-1.5 border-b-2 border-r-2 transition;
+}
+
+.export-type-option--checked .export-type-option__box {
+  background: var(--app-accent);
+  border-color: var(--app-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-accent) 18%, transparent);
+}
+
+.export-type-option--checked .export-type-option__box::after {
+  transform: rotate(45deg) scale(1);
+}
+
+.export-type-option:has(input:focus-visible) {
+  outline: 2px solid color-mix(in srgb, var(--app-accent) 72%, white);
+  outline-offset: 2px;
+}
+
+.export-type-option__label {
+  @apply leading-none;
+}
+
 .button:disabled,
 .button-secondary:disabled {
   @apply cursor-not-allowed opacity-50;

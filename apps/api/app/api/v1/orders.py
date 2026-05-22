@@ -480,7 +480,9 @@ def _product_excluded_from_export(product: object, excluded_product_types: set[s
 
 def _attachment_header(filename: str) -> str:
     quoted = quote(filename)
-    return f'attachment; filename="{filename}"; filename*=UTF-8\'\'{quoted}'
+    fallback = filename.encode("ascii", "ignore").decode("ascii").strip() or "export.xlsx"
+    fallback = fallback.replace("\\", "_").replace('"', "_")
+    return f'attachment; filename="{fallback}"; filename*=UTF-8\'\'{quoted}'
 
 
 def _payload_decimal(value) -> Decimal | None:

@@ -9,7 +9,7 @@ import openpyxl
 import pytest
 from sqlalchemy.orm import Session
 
-from app.api.v1.orders import _export_download_info, _mark_export_downloaded
+from app.api.v1.orders import _attachment_header, _export_download_info, _mark_export_downloaded
 from app.core.enums import OrderItemStatus, OrderStatus
 from app.models.client import Client
 from app.models.order import Order, OrderItem, ProcessingEvent
@@ -41,7 +41,7 @@ def test_export_matches_template_contract() -> None:
     template_sheet = template.active
     sheet = workbook.active
 
-    assert workbook.sheetnames == template.sheetnames
+    assert workbook.sheetnames == [*template.sheetnames, "Все товары"]
     assert sheet.title == template_sheet.title
     assert [str(item) for item in sheet.merged_cells.ranges] == [
         str(item) for item in template_sheet.merged_cells.ranges
@@ -69,6 +69,11 @@ def test_export_matches_template_contract() -> None:
     assert sheet["C7"].value == 1
     assert sheet["D7"].value == 12.5
     assert sheet["E6"].value is None
+    assert workbook["Все товары"]["D1"].value == "100245"
+    assert _cell_date(workbook["Все товары"]["F1"].value) == date(2026, 5, 14)
+    assert workbook["Все товары"]["A3"].value == "Выгружается"
+    assert workbook["Все товары"]["C3"].value == "201300090081421071130040"
+    assert workbook["Все товары"]["D3"].value == "Test product 1"
     assert sheet["A6"].border.left.style == template_sheet["A6"].border.left.style
     assert sheet["D6"].fill.fill_type == template_sheet["D6"].fill.fill_type
     assert sheet.sheet_view.selection[0].activeCell == "A1"
@@ -190,12 +195,21 @@ def test_export_filename_is_operator_friendly() -> None:
             document_date=date(2026, 5, 14),
             fiche_no="0000000001",
             lines=[],
+            client_name="Панорама",
             order_id=48,
             sequence_number=20,
         )
     )
 
-    assert filename == "AsiaRetail zakaz 2026-05-14 id-48 0020.xlsx"
+    assert filename == "2026-05-14 id-48 AsiaRetail zakaz 0020 Панорама.xlsx"
+
+
+def test_order_attachment_header_allows_cyrillic_filename() -> None:
+    header = _attachment_header("2026-05-14 id-48 AsiaRetail zakaz 0020 Панорама.xlsx")
+
+    header.encode("latin-1")
+    assert 'filename="2026-05-14 id-48 AsiaRetail zakaz 0020 .xlsx"' in header
+    assert "filename*=UTF-8''2026-05-14%20id-48%20AsiaRetail%20zakaz%200020%20%D0%9F" in header
 
 
 def test_export_order_uses_resolved_product_and_client(db_session: Session) -> None:
@@ -219,7 +233,7 @@ def test_export_order_uses_resolved_product_and_client(db_session: Session) -> N
     assert sheet["D6"].value == 4
     assert order.status == OrderStatus.EXPORTED.value
     assert order.export_file_id is None
-    assert result.filename == f"Piton zakaz {date.today().isoformat()} id-{order.id} 0000.xlsx"
+    assert result.filename == f"{date.today().isoformat()} id-{order.id} Piton zakaz 0000 Resolved Client.xlsx"
     workbook.close()
 
 
@@ -246,8 +260,8 @@ def test_repeated_export_uses_next_global_fiche_sequence(db_session: Session) ->
 
     first_workbook = openpyxl.load_workbook(BytesIO(first.content), data_only=True)
     second_workbook = openpyxl.load_workbook(BytesIO(second.content), data_only=True)
-    assert first.filename == f"Piton zakaz {date.today().isoformat()} id-{order.id} 0000.xlsx"
-    assert second.filename == f"Piton zakaz {date.today().isoformat()} id-{order.id} 0005.xlsx"
+    assert first.filename == f"{date.today().isoformat()} id-{order.id} Piton zakaz 0000 Resolved Client.xlsx"
+    assert second.filename == f"{date.today().isoformat()} id-{order.id} Piton zakaz 0005 Resolved Client.xlsx"
     assert first_workbook.active["B4"].value == "KA0000000000"
     assert second_workbook.active["B4"].value == "KA0000000005"
     assert (db_session.get(Order, order.id).events[-1].payload or {})["export_sequence_next"] == 10
@@ -271,7 +285,7 @@ def test_export_sequence_counts_existing_export_events(db_session: Session) -> N
     result = ExportService(template_path=TEMPLATE_PATH).export_order(db_session, order.id)
 
     workbook = openpyxl.load_workbook(BytesIO(result.content), data_only=True)
-    assert result.filename == f"Piton zakaz {date.today().isoformat()} id-{order.id} 0050.xlsx"
+    assert result.filename == f"{date.today().isoformat()} id-{order.id} Piton zakaz 0050 Resolved Client.xlsx"
     assert workbook.active["B4"].value == "KA0000000050"
     workbook.close()
 
@@ -294,8 +308,8 @@ def test_export_sequence_is_global_across_orders(db_session: Session) -> None:
 
     first_workbook = openpyxl.load_workbook(BytesIO(first.content), data_only=True)
     second_workbook = openpyxl.load_workbook(BytesIO(second.content), data_only=True)
-    assert first.filename == f"Piton zakaz {date.today().isoformat()} id-{first_order.id} 0000.xlsx"
-    assert second.filename == f"Piton zakaz {date.today().isoformat()} id-{second_order.id} 0005.xlsx"
+    assert first.filename == f"{date.today().isoformat()} id-{first_order.id} Piton zakaz 0000 Resolved Client.xlsx"
+    assert second.filename == f"{date.today().isoformat()} id-{second_order.id} Piton zakaz 0005 Resolved Client.xlsx"
     assert first_workbook.active["B4"].value == "KA0000000000"
     assert second_workbook.active["B4"].value == "KA0000000005"
     first_workbook.close()
@@ -351,11 +365,11 @@ def test_next_export_sequence_skips_all_blocks_from_previous_full_export(db_sess
 
     first_workbook = openpyxl.load_workbook(BytesIO(first.content), data_only=True)
     second_workbook = openpyxl.load_workbook(BytesIO(second.content), data_only=True)
-    assert first.filename == f"Piton zakaz {date.today().isoformat()} id-{order.id} 0000.xlsx"
+    assert first.filename == f"{date.today().isoformat()} id-{order.id} Piton zakaz 0000 Resolved Client.xlsx"
     assert first_workbook["1"]["B4"].value == "KA0000000000"
     assert first_workbook["1"]["B11"].value == "KA0000000005"
     assert first_workbook["1"]["B18"].value == "KA0000000010"
-    assert second.filename == f"Piton zakaz {date.today().isoformat()} id-{order.id} 0015.xlsx"
+    assert second.filename == f"{date.today().isoformat()} id-{order.id} Piton zakaz 0015 Resolved Client.xlsx"
     assert second_workbook["1"]["B4"].value == "KA0000000015"
     first_workbook.close()
     second_workbook.close()
@@ -535,8 +549,7 @@ def test_export_stacks_product_type_blocks_on_one_sheet_and_adds_problem_sheet(d
     result = ExportService(template_path=TEMPLATE_PATH).export_order(db_session, order.id)
 
     workbook = openpyxl.load_workbook(BytesIO(result.content), data_only=True)
-    assert workbook.sheetnames[-1] == "Проблемные"
-    assert workbook.sheetnames == ["1", "Проблемные"]
+    assert workbook.sheetnames == ["1", "Проблемные", "Все товары"]
     sheet = workbook["1"]
     assert sheet["A6"].value == "ERP-100"
     assert sheet["B3"].value == 1
@@ -547,6 +560,15 @@ def test_export_stacks_product_type_blocks_on_one_sheet_and_adds_problem_sheet(d
     assert sheet["B11"].value == "KA0000000005"
     assert workbook["Проблемные"]["B2"].value == "RAW-404"
     assert workbook["Проблемные"]["G2"].value == "Товар не сопоставлен"
+    assert workbook["Все товары"]["D1"].value == "Resolved Client"
+    assert _cell_date(workbook["Все товары"]["F1"].value) == date.today()
+    assert workbook["Все товары"]["A3"].value == "Выгружается"
+    assert workbook["Все товары"]["C3"].value == "ERP-100"
+    assert workbook["Все товары"]["E3"].value == "RAW-100"
+    assert workbook["Все товары"]["F3"].value == "4600000000000"
+    assert workbook["Все товары"]["A5"].value == "Проблема"
+    assert workbook["Все товары"]["E5"].value == "RAW-404"
+    assert workbook["Все товары"]["J5"].value == "Товар не сопоставлен"
     workbook.close()
 
 
@@ -581,6 +603,9 @@ def test_export_moves_short_numeric_item_codes_to_problem_sheet(db_session: Sess
     assert workbook["1"]["A6"].value == "ERP-INCLUDED"
     assert workbook["Проблемные"]["B2"].value == "RAW-100"
     assert workbook["Проблемные"]["G2"].value == "Короткий номер товара 3-4 знака"
+    assert workbook["Все товары"]["A3"].value == "Выгружается"
+    assert workbook["Все товары"]["A4"].value == "Проблема"
+    assert workbook["Все товары"]["J4"].value == "Короткий номер товара 3-4 знака"
     workbook.close()
 
 
@@ -596,7 +621,7 @@ def test_export_by_type_ignores_type_exclusion_rule(db_session: Session) -> None
     )
 
     workbook = openpyxl.load_workbook(BytesIO(result.content), data_only=True)
-    assert workbook.sheetnames == ["1"]
+    assert workbook.sheetnames == ["1", "Все товары"]
     assert workbook["1"]["A6"].value == "ERP-100"
     workbook.close()
 
