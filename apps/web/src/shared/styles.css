@@ -349,6 +349,11 @@ body {
   @apply block truncate;
 }
 
+.products-table__name-text {
+  overflow-wrap: anywhere;
+  @apply block whitespace-normal;
+}
+
 .products-table__barcode-text {
   @apply cursor-help;
 }

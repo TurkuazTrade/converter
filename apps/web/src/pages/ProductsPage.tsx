@@ -413,34 +413,42 @@ export function ProductsPage() {
               </tr>
             </thead>
             <tbody>
-              {products.map((product: any) => (
-                <tr key={product.id}>
-                  <td>
-                    <span className="products-table__cell-text">{displayProductName(product)}</span>
-                  </td>
-                  <td>{product.item_code}</td>
-                  <td>{product.exchange_code}</td>
-                  <td>{formatBarcodeList(product)}</td>
-                  <td>{product.article}</td>
-                  <td>{product.stock}</td>
-                  <td>{product.trade_mark}</td>
-                  <td>{product.brand}</td>
-                  <td>{product.product_type}</td>
-                  <td>{formatMultiplier(product.conversion_multiplier)}</td>
-                  <td>{product.exclude_from_export ? 'Не выгружать' : 'Выгружать'}</td>
-                  <td>{product.is_active ? 'Да' : 'Нет'}</td>
-                  <td>
-                    <div className="flex flex-wrap gap-2">
-                      <button type="button" className="button-secondary" onClick={() => toggleExportExclusion(product)}>
-                        {product.exclude_from_export ? 'Вернуть в Excel' : 'Исключить'}
-                      </button>
-                      <button type="button" className="button-secondary" onClick={() => editProduct(product)}>
-                        Редактировать
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {products.map((product: any) => {
+                const productName = getProductDisplayName(product);
+                return (
+                  <tr key={product.id}>
+                    <td>
+                      <span
+                        className={`products-table__name-text ${productName.isMissing ? 'text-slate-500' : ''}`}
+                        title={productName.isMissing ? undefined : productName.name}
+                      >
+                        {productName.name}
+                      </span>
+                    </td>
+                    <td>{product.item_code}</td>
+                    <td>{product.exchange_code}</td>
+                    <td>{formatBarcodeList(product)}</td>
+                    <td>{product.article}</td>
+                    <td>{product.stock}</td>
+                    <td>{product.trade_mark}</td>
+                    <td>{product.brand}</td>
+                    <td>{product.product_type}</td>
+                    <td>{formatMultiplier(product.conversion_multiplier)}</td>
+                    <td>{product.exclude_from_export ? 'Не выгружать' : 'Выгружать'}</td>
+                    <td>{product.is_active ? 'Да' : 'Нет'}</td>
+                    <td>
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" className="button-secondary" onClick={() => toggleExportExclusion(product)}>
+                          {product.exclude_from_export ? 'Вернуть в Excel' : 'Исключить'}
+                        </button>
+                        <button type="button" className="button-secondary" onClick={() => editProduct(product)}>
+                          Редактировать
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -565,13 +573,13 @@ function sortLabel(sortBy: string) {
   return sortOptions.find(([value]) => value === sortBy)?.[1] ?? 'Наименование';
 }
 
-function displayProductName(product: any) {
+function getProductDisplayName(product: any) {
   const name = String(product.name ?? '').trim();
   const code = String(product.item_code ?? '').trim();
   if (!name || name === code) {
-    return <span className="text-slate-500">Название не задано</span>;
+    return { name: 'Название не задано', isMissing: true };
   }
-  return name;
+  return { name, isMissing: false };
 }
 
 function formatBarcodeList(product: any) {
