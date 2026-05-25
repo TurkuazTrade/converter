@@ -12,7 +12,7 @@ class Settings(BaseSettings):
 
     app_name: str = "Turkuaz CRM"
     environment: str = "development"
-    database_url: str = "sqlite:///../../data/app.db"
+    database_url: str = "sqlite:///../../data/app1.db"
     secret_key: str = "dev-change-me-32-byte-secret-key-for-turkuaz-crm"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 720

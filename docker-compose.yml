@@ -5,7 +5,7 @@ services:
     env_file:
       - ./apps/api/.env.example
     environment:
-      - DATABASE_URL=sqlite:////data/app.db
+      - DATABASE_URL=sqlite:////data/app1.db
       - STORAGE_ROOT=/data/storage
       - TEMPLATE_PATH=/data/templates/template_zakaz.xlsx
     volumes:
