@@ -377,6 +377,116 @@ body {
   table-layout: fixed;
 }
 
+.adjustable-table {
+  table-layout: fixed;
+}
+
+.adjustable-table th {
+  @apply relative;
+}
+
+.adjustable-table td {
+  overflow: hidden;
+}
+
+.adjustable-table--resizing,
+.adjustable-table--resizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+.adjustable-table__header-content {
+  min-height: 1.25rem;
+  @apply flex w-full cursor-grab items-center pr-2 select-none;
+}
+
+.adjustable-table__header-content:active {
+  @apply cursor-grabbing;
+}
+
+.adjustable-table__header-label,
+.adjustable-table__cell-text {
+  @apply block truncate;
+}
+
+.adjustable-table__header--drag-over {
+  box-shadow: inset 3px 0 0 var(--app-accent);
+}
+
+.adjustable-table__resize-handle {
+  background: transparent;
+  touch-action: none;
+  @apply absolute -right-1 top-0 z-10 h-full w-2 cursor-col-resize border-0 p-0;
+}
+
+.adjustable-table__resize-handle::after {
+  content: "";
+  background: color-mix(in srgb, var(--app-border-strong) 70%, transparent);
+  transform: scaleY(0.55);
+  @apply absolute right-1 top-0 h-full w-px rounded-full transition;
+}
+
+.adjustable-table__resize-handle:hover::after,
+.adjustable-table__resize-handle--active::after {
+  background: var(--app-accent);
+  transform: scaleY(0.85);
+}
+
+.matching-table__name-text {
+  overflow-wrap: anywhere;
+  @apply block whitespace-normal;
+}
+
+.products-table th {
+  @apply relative;
+}
+
+.products-table td {
+  overflow: hidden;
+}
+
+.products-table--resizing,
+.products-table--resizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+.products-table__header-content {
+  min-height: 1.25rem;
+  @apply flex w-full cursor-grab items-center pr-2 select-none;
+}
+
+.products-table__header-content:active {
+  @apply cursor-grabbing;
+}
+
+.products-table__header-label {
+  @apply block truncate;
+}
+
+.products-table__header--drag-over {
+  box-shadow: inset 3px 0 0 var(--app-accent);
+}
+
+.products-table__resize-handle {
+  background: transparent;
+  touch-action: none;
+  @apply absolute -right-1 top-0 z-10 h-full w-2 cursor-col-resize border-0 p-0;
+}
+
+.products-table__resize-handle::after {
+  content: "";
+  background: color-mix(in srgb, var(--app-border-strong) 70%, transparent);
+  transform: scaleY(0.55);
+  @apply absolute right-1 top-0 h-full w-px rounded-full transition;
+}
+
+.products-table__resize-handle:hover::after,
+.products-table__resize-handle--active::after {
+  background: var(--app-accent);
+  transform: scaleY(0.85);
+}
+
 .products-table__name-col {
   width: 260px;
 }

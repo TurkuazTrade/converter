@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { FormModal } from '../components/FormModal';
@@ -28,6 +28,33 @@ type ProductFilterOptions = {
   trade_marks: string[];
 };
 
+type ProductColumnId =
+  | 'name'
+  | 'item_code'
+  | 'exchange_code'
+  | 'barcode'
+  | 'article'
+  | 'stock'
+  | 'trade_mark'
+  | 'brand'
+  | 'product_type'
+  | 'conversion_multiplier'
+  | 'exclude_from_export'
+  | 'is_active'
+  | 'actions';
+
+type ProductTableColumn = {
+  id: ProductColumnId;
+  label: string;
+  defaultWidth: number;
+  minWidth: number;
+};
+
+type ProductTableSettings = {
+  order: ProductColumnId[];
+  widths: Partial<Record<ProductColumnId, number>>;
+};
+
 const sortOptions = [
   ['name', 'Наименование'],
   ['item_code', 'Номер товара'],
@@ -40,6 +67,25 @@ const sortOptions = [
   ['exclude_from_export', 'Excel'],
   ['is_active', 'Активность'],
 ] as const;
+
+const PRODUCT_TABLE_STORAGE_KEY = 'turkuaz:products-table-columns:v1';
+const MAX_PRODUCT_COLUMN_WIDTH = 640;
+const PRODUCT_TABLE_COLUMNS: ProductTableColumn[] = [
+  { id: 'name', label: 'Наименование', defaultWidth: 260, minWidth: 180 },
+  { id: 'item_code', label: 'Номер товара', defaultWidth: 140, minWidth: 100 },
+  { id: 'exchange_code', label: 'Код обмена', defaultWidth: 140, minWidth: 100 },
+  { id: 'barcode', label: 'Штрихкод', defaultWidth: 260, minWidth: 140 },
+  { id: 'article', label: 'Артикул', defaultWidth: 140, minWidth: 100 },
+  { id: 'stock', label: 'Остаток', defaultWidth: 100, minWidth: 80 },
+  { id: 'trade_mark', label: 'Торговая марка', defaultWidth: 140, minWidth: 110 },
+  { id: 'brand', label: 'Бренд', defaultWidth: 140, minWidth: 110 },
+  { id: 'product_type', label: 'Тип', defaultWidth: 140, minWidth: 100 },
+  { id: 'conversion_multiplier', label: 'Множитель', defaultWidth: 100, minWidth: 90 },
+  { id: 'exclude_from_export', label: 'Excel', defaultWidth: 120, minWidth: 100 },
+  { id: 'is_active', label: 'Активен', defaultWidth: 100, minWidth: 90 },
+  { id: 'actions', label: '', defaultWidth: 220, minWidth: 180 },
+];
+const PRODUCT_TABLE_COLUMN_IDS = PRODUCT_TABLE_COLUMNS.map((column) => column.id);
 
 const emptyProductForm: ProductForm = {
   item_code: '',
@@ -60,6 +106,8 @@ const emptyProductForm: ProductForm = {
 export function ProductsPage() {
   const queryClient = useQueryClient();
   const tableScrollRef = useRef<HTMLElement | null>(null);
+  const resizeCleanupRef = useRef<(() => void) | null>(null);
+  const columnDragCleanupRef = useRef<(() => void) | null>(null);
   const dragScrollRef = useRef<{
     pointerId: number;
     startX: number;
@@ -84,6 +132,10 @@ export function ProductsPage() {
   const [formError, setFormError] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [tableDragging, setTableDragging] = useState(false);
+  const [productTableSettings, setProductTableSettings] = useState<ProductTableSettings>(() => readProductTableSettings());
+  const [draggingColumnId, setDraggingColumnId] = useState<ProductColumnId | null>(null);
+  const [dragOverColumnId, setDragOverColumnId] = useState<ProductColumnId | null>(null);
+  const [resizingColumnId, setResizingColumnId] = useState<ProductColumnId | null>(null);
   const { data, isLoading } = useQuery({
     queryKey: [
       'products',
@@ -109,6 +161,8 @@ export function ProductsPage() {
     ).data,
   });
   const products = data ?? [];
+  const orderedColumns = getOrderedProductColumns(productTableSettings.order);
+  const tableWidth = orderedColumns.reduce((total, column) => total + getProductColumnWidth(productTableSettings, column), 0);
   const { data: filterOptions } = useQuery<ProductFilterOptions>({
     queryKey: ['product-filter-options'],
     queryFn: async () => (await api.get('/products/filter-options')).data,
@@ -273,6 +327,160 @@ export function ProductsPage() {
     setTableDragging(false);
   }
 
+  function startColumnResize(event: React.PointerEvent<HTMLButtonElement>, column: ProductTableColumn) {
+    event.preventDefault();
+    event.stopPropagation();
+    resizeCleanupRef.current?.();
+    const pointerId = event.pointerId;
+    const startX = event.clientX;
+    const startWidth = getProductColumnWidth(productTableSettings, column);
+    setResizingColumnId(column.id);
+
+    const moveColumnResize = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      moveEvent.preventDefault();
+      const nextWidth = clampProductColumnWidth(startWidth + moveEvent.clientX - startX, column);
+      setProductTableSettings((prev) => ({
+        ...prev,
+        widths: {
+          ...prev.widths,
+          [column.id]: nextWidth,
+        },
+      }));
+    };
+    const stopColumnResize = (upEvent: PointerEvent) => {
+      if (upEvent.pointerId !== pointerId) return;
+      window.removeEventListener('pointermove', moveColumnResize);
+      window.removeEventListener('pointerup', stopColumnResize);
+      window.removeEventListener('pointercancel', stopColumnResize);
+      resizeCleanupRef.current = null;
+      setResizingColumnId(null);
+    };
+    resizeCleanupRef.current = () => {
+      window.removeEventListener('pointermove', moveColumnResize);
+      window.removeEventListener('pointerup', stopColumnResize);
+      window.removeEventListener('pointercancel', stopColumnResize);
+      setResizingColumnId(null);
+    };
+    window.addEventListener('pointermove', moveColumnResize);
+    window.addEventListener('pointerup', stopColumnResize);
+    window.addEventListener('pointercancel', stopColumnResize);
+  }
+
+  function startColumnDrag(event: React.PointerEvent<HTMLDivElement>, column: ProductTableColumn) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    columnDragCleanupRef.current?.();
+    const pointerId = event.pointerId;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let moved = false;
+
+    const moveColumnDrag = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      const deltaX = moveEvent.clientX - startX;
+      const deltaY = moveEvent.clientY - startY;
+      if (!moved && Math.hypot(deltaX, deltaY) > 6) {
+        moved = true;
+        setDraggingColumnId(column.id);
+      }
+      if (!moved) return;
+      moveEvent.preventDefault();
+      const target = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY);
+      const targetColumnId = target instanceof HTMLElement ? target.closest<HTMLElement>('[data-product-column-id]')?.dataset.productColumnId : undefined;
+      setDragOverColumnId(isProductColumnId(targetColumnId) ? targetColumnId : null);
+    };
+    const stopColumnDrag = (upEvent: PointerEvent) => {
+      if (upEvent.pointerId !== pointerId) return;
+      const target = document.elementFromPoint(upEvent.clientX, upEvent.clientY);
+      const targetColumnId = target instanceof HTMLElement ? target.closest<HTMLElement>('[data-product-column-id]')?.dataset.productColumnId : undefined;
+      if (moved && isProductColumnId(targetColumnId)) {
+        moveColumn(column.id, targetColumnId);
+      }
+      window.removeEventListener('pointermove', moveColumnDrag);
+      window.removeEventListener('pointerup', stopColumnDrag);
+      window.removeEventListener('pointercancel', stopColumnDrag);
+      columnDragCleanupRef.current = null;
+      setDraggingColumnId(null);
+      setDragOverColumnId(null);
+    };
+    columnDragCleanupRef.current = () => {
+      window.removeEventListener('pointermove', moveColumnDrag);
+      window.removeEventListener('pointerup', stopColumnDrag);
+      window.removeEventListener('pointercancel', stopColumnDrag);
+      setDraggingColumnId(null);
+      setDragOverColumnId(null);
+    };
+    window.addEventListener('pointermove', moveColumnDrag);
+    window.addEventListener('pointerup', stopColumnDrag);
+    window.addEventListener('pointercancel', stopColumnDrag);
+  }
+
+  function moveColumn(sourceId: ProductColumnId, targetId: ProductColumnId) {
+    if (sourceId === targetId) return;
+    setProductTableSettings((prev) => {
+      const currentOrder = getOrderedProductColumns(prev.order).map((column) => column.id);
+      const sourceIndex = currentOrder.indexOf(sourceId);
+      const targetIndex = currentOrder.indexOf(targetId);
+      if (sourceIndex < 0 || targetIndex < 0) return prev;
+      const nextOrder = [...currentOrder];
+      const [movedColumn] = nextOrder.splice(sourceIndex, 1);
+      nextOrder.splice(targetIndex, 0, movedColumn);
+      return { ...prev, order: nextOrder };
+    });
+  }
+
+  function resetProductTableLayout() {
+    setProductTableSettings(createDefaultProductTableSettings());
+    setDragOverColumnId(null);
+    setDraggingColumnId(null);
+  }
+
+  function renderProductTableCell(columnId: ProductColumnId, product: any) {
+    if (columnId === 'name') {
+      const productName = getProductDisplayName(product);
+      return (
+        <span
+          className={`products-table__name-text ${productName.isMissing ? 'text-slate-500' : ''}`}
+          title={productName.isMissing ? undefined : productName.name}
+        >
+          {productName.name}
+        </span>
+      );
+    }
+    if (columnId === 'item_code') return formatProductTableText(product.item_code);
+    if (columnId === 'exchange_code') return formatProductTableText(product.exchange_code);
+    if (columnId === 'barcode') return formatBarcodeList(product);
+    if (columnId === 'article') return formatProductTableText(product.article);
+    if (columnId === 'stock') return formatProductTableText(product.stock);
+    if (columnId === 'trade_mark') return formatProductTableText(product.trade_mark);
+    if (columnId === 'brand') return formatProductTableText(product.brand);
+    if (columnId === 'product_type') return formatProductTableText(product.product_type);
+    if (columnId === 'conversion_multiplier') return formatProductTableText(formatMultiplier(product.conversion_multiplier));
+    if (columnId === 'exclude_from_export') return formatProductTableText(product.exclude_from_export ? 'Не выгружать' : 'Выгружать');
+    if (columnId === 'is_active') return formatProductTableText(product.is_active ? 'Да' : 'Нет');
+    return (
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className="button-secondary" onClick={() => toggleExportExclusion(product)}>
+          {product.exclude_from_export ? 'Вернуть в Excel' : 'Исключить'}
+        </button>
+        <button type="button" className="button-secondary" onClick={() => editProduct(product)}>
+          Редактировать
+        </button>
+      </div>
+    );
+  }
+
+  useEffect(() => {
+    writeProductTableSettings(productTableSettings);
+  }, [productTableSettings]);
+
+  useEffect(() => () => {
+    resizeCleanupRef.current?.();
+    columnDragCleanupRef.current?.();
+  }, []);
+
   return (
     <main className="page space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -363,14 +571,19 @@ export function ProductsPage() {
           </div>
         )}
         extraControls={(
-          <button type="button" className="button-secondary" onClick={() => setFiltersOpen((value) => !value)}>
-            {filtersOpen ? 'Скрыть фильтры' : 'Открыть фильтры'}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="button-secondary" onClick={resetProductTableLayout}>
+              Сбросить колонки
+            </button>
+            <button type="button" className="button-secondary" onClick={() => setFiltersOpen((value) => !value)}>
+              {filtersOpen ? 'Скрыть фильтры' : 'Открыть фильтры'}
+            </button>
+          </div>
         )}
       />
       <section
         ref={tableScrollRef}
-        className={`panel overflow-auto p-0 ${tableDragging ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
+        className={`panel overflow-auto p-0 ${tableDragging ? 'cursor-grabbing select-none' : 'cursor-grab'} ${resizingColumnId ? 'products-table--resizing' : ''}`}
         onPointerDown={startTableDrag}
         onPointerMove={moveTableDrag}
         onPointerUp={stopTableDrag}
@@ -379,76 +592,48 @@ export function ProductsPage() {
         {isLoading ? (
           <p className="p-5 text-slate-400">Загрузка...</p>
         ) : (
-          <table className="table products-table">
+          <table className="table products-table" style={{ minWidth: tableWidth, width: tableWidth }}>
             <colgroup>
-              <col className="products-table__name-col" />
-              <col className="products-table__code-col" />
-              <col className="products-table__code-col" />
-              <col className="products-table__barcode-col" />
-              <col className="products-table__code-col" />
-              <col className="products-table__stock-col" />
-              <col className="products-table__text-col" />
-              <col className="products-table__text-col" />
-              <col className="products-table__text-col" />
-              <col className="products-table__small-col" />
-              <col className="products-table__status-col" />
-              <col className="products-table__small-col" />
-              <col className="products-table__actions-col" />
+              {orderedColumns.map((column) => (
+                <col key={column.id} style={{ width: getProductColumnWidth(productTableSettings, column) }} />
+              ))}
             </colgroup>
             <thead>
               <tr>
-                <th>Наименование</th>
-                <th>Номер товара</th>
-                <th>Код обмена</th>
-                <th>Штрихкод</th>
-                <th>Артикул</th>
-                <th>Остаток</th>
-                <th>Торговая марка</th>
-                <th>Бренд</th>
-                <th>Тип</th>
-                <th>Множитель</th>
-                <th>Excel</th>
-                <th>Активен</th>
-                <th></th>
+                {orderedColumns.map((column) => (
+                  <th
+                    key={column.id}
+                    data-product-column-id={column.id}
+                    className={dragOverColumnId === column.id && draggingColumnId !== column.id ? 'products-table__header--drag-over' : undefined}
+                  >
+                    <div
+                      className="products-table__header-content"
+                      data-table-control="true"
+                      title={column.label ? 'Перетащить столбец' : 'Перетащить столбец действий'}
+                      onPointerDown={(event) => startColumnDrag(event, column)}
+                    >
+                      <span className="products-table__header-label">{column.label}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className={`products-table__resize-handle ${resizingColumnId === column.id ? 'products-table__resize-handle--active' : ''}`}
+                      data-table-control="true"
+                      aria-label={column.label ? `Изменить ширину столбца ${column.label}` : 'Изменить ширину столбца действий'}
+                      title="Изменить ширину"
+                      onPointerDown={(event) => startColumnResize(event, column)}
+                    />
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {products.map((product: any) => {
-                const productName = getProductDisplayName(product);
-                return (
-                  <tr key={product.id}>
-                    <td>
-                      <span
-                        className={`products-table__name-text ${productName.isMissing ? 'text-slate-500' : ''}`}
-                        title={productName.isMissing ? undefined : productName.name}
-                      >
-                        {productName.name}
-                      </span>
-                    </td>
-                    <td>{product.item_code}</td>
-                    <td>{product.exchange_code}</td>
-                    <td>{formatBarcodeList(product)}</td>
-                    <td>{product.article}</td>
-                    <td>{product.stock}</td>
-                    <td>{product.trade_mark}</td>
-                    <td>{product.brand}</td>
-                    <td>{product.product_type}</td>
-                    <td>{formatMultiplier(product.conversion_multiplier)}</td>
-                    <td>{product.exclude_from_export ? 'Не выгружать' : 'Выгружать'}</td>
-                    <td>{product.is_active ? 'Да' : 'Нет'}</td>
-                    <td>
-                      <div className="flex flex-wrap gap-2">
-                        <button type="button" className="button-secondary" onClick={() => toggleExportExclusion(product)}>
-                          {product.exclude_from_export ? 'Вернуть в Excel' : 'Исключить'}
-                        </button>
-                        <button type="button" className="button-secondary" onClick={() => editProduct(product)}>
-                          Редактировать
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+              {products.map((product: any) => (
+                <tr key={product.id}>
+                  {orderedColumns.map((column) => (
+                    <td key={column.id}>{renderProductTableCell(column.id, product)}</td>
+                  ))}
+                </tr>
+              ))}
             </tbody>
           </table>
         )}
@@ -573,6 +758,68 @@ function sortLabel(sortBy: string) {
   return sortOptions.find(([value]) => value === sortBy)?.[1] ?? 'Наименование';
 }
 
+function createDefaultProductTableSettings(): ProductTableSettings {
+  return {
+    order: [...PRODUCT_TABLE_COLUMN_IDS],
+    widths: Object.fromEntries(PRODUCT_TABLE_COLUMNS.map((column) => [column.id, column.defaultWidth])) as Partial<Record<ProductColumnId, number>>,
+  };
+}
+
+function readProductTableSettings(): ProductTableSettings {
+  if (typeof window === 'undefined') return createDefaultProductTableSettings();
+  try {
+    const rawValue = window.localStorage.getItem(PRODUCT_TABLE_STORAGE_KEY);
+    if (!rawValue) return createDefaultProductTableSettings();
+    return normalizeProductTableSettings(JSON.parse(rawValue));
+  } catch {
+    return createDefaultProductTableSettings();
+  }
+}
+
+function writeProductTableSettings(settings: ProductTableSettings) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(PRODUCT_TABLE_STORAGE_KEY, JSON.stringify(normalizeProductTableSettings(settings)));
+  } catch {
+    // Layout settings are a convenience; table rendering should not depend on storage availability.
+  }
+}
+
+function normalizeProductTableSettings(value: unknown): ProductTableSettings {
+  if (!value || typeof value !== 'object') return createDefaultProductTableSettings();
+  const settings = value as Partial<ProductTableSettings>;
+  const savedOrder = Array.isArray(settings.order) ? settings.order.filter(isProductColumnId) : [];
+  const order = [
+    ...savedOrder,
+    ...PRODUCT_TABLE_COLUMN_IDS.filter((columnId) => !savedOrder.includes(columnId)),
+  ];
+  const widths: Partial<Record<ProductColumnId, number>> = {};
+  for (const column of PRODUCT_TABLE_COLUMNS) {
+    const savedWidth = settings.widths?.[column.id];
+    widths[column.id] = clampProductColumnWidth(typeof savedWidth === 'number' ? savedWidth : column.defaultWidth, column);
+  }
+  return { order, widths };
+}
+
+function getOrderedProductColumns(order: ProductColumnId[]) {
+  return order
+    .map((columnId) => PRODUCT_TABLE_COLUMNS.find((column) => column.id === columnId))
+    .filter((column): column is ProductTableColumn => Boolean(column));
+}
+
+function getProductColumnWidth(settings: ProductTableSettings, column: ProductTableColumn) {
+  return clampProductColumnWidth(settings.widths[column.id] ?? column.defaultWidth, column);
+}
+
+function clampProductColumnWidth(width: number, column: ProductTableColumn) {
+  if (!Number.isFinite(width)) return column.defaultWidth;
+  return Math.min(MAX_PRODUCT_COLUMN_WIDTH, Math.max(column.minWidth, Math.round(width)));
+}
+
+function isProductColumnId(value: unknown): value is ProductColumnId {
+  return typeof value === 'string' && PRODUCT_TABLE_COLUMN_IDS.includes(value as ProductColumnId);
+}
+
 function getProductDisplayName(product: any) {
   const name = String(product.name ?? '').trim();
   const code = String(product.item_code ?? '').trim();
@@ -592,6 +839,16 @@ function formatBarcodeList(product: any) {
   );
 }
 
+function formatProductTableText(value: unknown) {
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  return (
+    <span className="products-table__cell-text" title={text}>
+      {text}
+    </span>
+  );
+}
+
 function formatMultiplier(value: unknown) {
   const numberValue = Number(value ?? 1);
   if (!Number.isFinite(numberValue)) return '1';
@@ -599,5 +856,5 @@ function formatMultiplier(value: unknown) {
 }
 
 function isInteractiveTarget(target: EventTarget) {
-  return target instanceof HTMLElement && Boolean(target.closest('button, input, select, textarea, a, label'));
+  return target instanceof HTMLElement && Boolean(target.closest('button, input, select, textarea, a, label, [data-table-control="true"]'));
 }
