@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class OrderRead(BaseModel):
@@ -34,3 +34,18 @@ class UploadOrderResponse(BaseModel):
     duplicate: bool = False
     existing_order_id: int | None = None
     message: str
+
+
+class ExportSequenceRead(BaseModel):
+    sequence_number: int
+    fiche_no: str
+
+
+class ExportSequenceUpdate(BaseModel):
+    sequence_number: int | None = Field(default=None, ge=0, le=9_999_999_999)
+    fiche_no: str | None = None
+
+
+class ExportSequenceUpdateResponse(ExportSequenceRead):
+    requested_sequence_number: int
+    updated: bool

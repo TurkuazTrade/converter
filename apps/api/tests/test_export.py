@@ -14,6 +14,7 @@ from app.core.enums import OrderItemStatus, OrderStatus
 from app.models.client import Client
 from app.models.order import Order, OrderItem, ProcessingEvent
 from app.models.product import Product, ProductTypeCatalog, ProductTypeExportRule
+from app.models.setting import AppSetting
 from app.models.user import User
 from app.services.export_service import ExportLine, ExportService, ResolvedOrderExport
 
@@ -287,6 +288,68 @@ def test_export_sequence_counts_existing_export_events(db_session: Session) -> N
     workbook = openpyxl.load_workbook(BytesIO(result.content), data_only=True)
     assert result.filename == f"{date.today().isoformat()} id-{order.id} Piton zakaz 0050 Resolved Client.xlsx"
     assert workbook.active["B4"].value == "KA0000000050"
+    workbook.close()
+
+
+def test_export_sequence_bootstraps_setting_once(db_session: Session) -> None:
+    order = _resolved_order(db_session)
+    db_session.flush()
+    db_session.add(
+        ProcessingEvent(
+            order_id=order.id,
+            event_type="exported",
+            message="Existing export.",
+            payload={"export_sequence_next": 50},
+        )
+    )
+    db_session.flush()
+
+    assert ExportService._next_export_sequence_number(db_session) == 50
+    assert db_session.get(AppSetting, ExportService.EXPORT_SEQUENCE_SETTING_KEY).value == {
+        "sequence_number": 50
+    }
+
+    db_session.add(
+        ProcessingEvent(
+            order_id=order.id,
+            event_type="exported",
+            message="Later legacy export.",
+            payload={"export_sequence_next": 500},
+        )
+    )
+    db_session.flush()
+
+    assert ExportService._next_export_sequence_number(db_session) == 50
+
+
+def test_set_next_export_sequence_only_advances(db_session: Session) -> None:
+    order = _resolved_order(db_session)
+    db_session.flush()
+    db_session.add(
+        ProcessingEvent(
+            order_id=order.id,
+            event_type="exported",
+            message="Existing export.",
+            payload={"export_sequence_next": 1985},
+        )
+    )
+    db_session.flush()
+
+    sequence_number, updated = ExportService.set_next_export_sequence_number(db_session, 1000)
+
+    assert sequence_number == 1985
+    assert updated is False
+
+    sequence_number, updated = ExportService.set_next_export_sequence_number(db_session, 5000)
+
+    assert sequence_number == 5000
+    assert updated is True
+
+    result = ExportService(template_path=TEMPLATE_PATH).export_order(db_session, order.id)
+    workbook = openpyxl.load_workbook(BytesIO(result.content), data_only=True)
+
+    assert workbook.active["B4"].value == "KA0000005000"
+    assert ExportService._next_export_sequence_number(db_session) == 5005
     workbook.close()
 
 

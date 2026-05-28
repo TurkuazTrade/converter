@@ -21,6 +21,7 @@ from app.core.constants import CONVERTER_FILENAME_PREFIXES
 from app.core.enums import OrderItemStatus, OrderStatus, ProcessingEventType
 from app.models.order import Order, OrderItem, ProcessingEvent
 from app.models.product import ProductTypeExportRule
+from app.models.setting import AppSetting
 from app.services.export_template import analyze_export_template
 from app.utils.normalization import is_short_numeric_item_code, sanitize_filename_part
 
@@ -83,6 +84,8 @@ class ExportService:
 
     FICHE_SEQUENCE_STEP = 5
     LEGACY_EXPORT_SEQUENCE_STRIDE = 50
+    EXPORT_SEQUENCE_SETTING_KEY = "export_sequence_next"
+    MAX_FICHE_SEQUENCE = 9_999_999_999
 
     def __init__(
         self,
@@ -139,6 +142,7 @@ class ExportService:
                 created_by_id=user_id,
             )
         )
+        self._store_export_sequence_number(db, export_sequence_next)
         return result
 
     def build_export_bytes(self, order: ResolvedOrderExport) -> bytes:
@@ -296,6 +300,41 @@ class ExportService:
 
     @staticmethod
     def _next_export_sequence_number(db: Session) -> int:
+        setting = db.get(AppSetting, ExportService.EXPORT_SEQUENCE_SETTING_KEY)
+        setting_sequence = ExportService._sequence_from_setting_value(
+            setting.value if setting is not None else None
+        )
+        if setting_sequence is not None:
+            return setting_sequence
+
+        sequence = ExportService._next_export_sequence_number_from_events(db)
+        ExportService._store_export_sequence_number(db, sequence)
+        return sequence
+
+    @staticmethod
+    def set_next_export_sequence_number(db: Session, sequence_number: int) -> tuple[int, bool]:
+        if sequence_number < 0:
+            raise ValueError("Export sequence number must be non-negative.")
+        if sequence_number > ExportService.MAX_FICHE_SEQUENCE:
+            raise ValueError("Export sequence number is too large.")
+        current_sequence = ExportService._next_export_sequence_number(db)
+        if sequence_number <= current_sequence:
+            return current_sequence, False
+        ExportService._store_export_sequence_number(db, sequence_number)
+        return sequence_number, True
+
+    @staticmethod
+    def _store_export_sequence_number(db: Session, sequence_number: int) -> None:
+        setting = db.get(AppSetting, ExportService.EXPORT_SEQUENCE_SETTING_KEY)
+        value = {"sequence_number": max(sequence_number, 0)}
+        if setting is None:
+            setting = AppSetting(key=ExportService.EXPORT_SEQUENCE_SETTING_KEY, value=value)
+            db.add(setting)
+            return
+        setting.value = value
+
+    @staticmethod
+    def _next_export_sequence_number_from_events(db: Session) -> int:
         events = list(
             db.scalars(
                 select(ProcessingEvent).where(
@@ -332,6 +371,24 @@ class ExportService:
     @staticmethod
     def _fiche_no_for_sequence(sequence: int) -> str:
         return f"KA{max(sequence, 0):010d}"
+
+    @staticmethod
+    def sequence_from_fiche_no(value: object) -> int | None:
+        if not isinstance(value, str):
+            return None
+        text = value.strip().upper()
+        if text.startswith("KA"):
+            text = text[2:]
+        if not text.isdigit():
+            return None
+        sequence = int(text)
+        return sequence if 0 <= sequence <= ExportService.MAX_FICHE_SEQUENCE else None
+
+    @staticmethod
+    def _sequence_from_setting_value(value: object) -> int | None:
+        if isinstance(value, dict):
+            return ExportService._int_payload_value(value.get("sequence_number"))
+        return ExportService._int_payload_value(value)
 
     @staticmethod
     def _int_payload_value(value: object) -> int | None:

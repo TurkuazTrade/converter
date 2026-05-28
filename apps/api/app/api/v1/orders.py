@@ -15,7 +15,14 @@ from app.db.session import get_db
 from app.models.user import User
 from app.models.order import Order
 from app.repositories.orders import OrderRepository
-from app.schemas.order import OrderDetail, OrderRead, UploadOrderResponse
+from app.schemas.order import (
+    ExportSequenceRead,
+    ExportSequenceUpdate,
+    ExportSequenceUpdateResponse,
+    OrderDetail,
+    OrderRead,
+    UploadOrderResponse,
+)
 from app.services.export_service import ExportService
 from app.services.matching_service import MatchingService
 from app.services.reference_workbook_service import ReferenceWorkbookService
@@ -62,6 +69,42 @@ def list_orders(
         _refresh_order_state(db, order)
     db.commit()
     return orders
+
+
+@router.get("/export-sequence", response_model=ExportSequenceRead)
+def get_export_sequence(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ExportSequenceRead:
+    sequence_number = ExportService._next_export_sequence_number(db)
+    db.commit()
+    return ExportSequenceRead(
+        sequence_number=sequence_number,
+        fiche_no=ExportService._fiche_no_for_sequence(sequence_number),
+    )
+
+
+@router.patch("/export-sequence", response_model=ExportSequenceUpdateResponse)
+def update_export_sequence(
+    payload: ExportSequenceUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ExportSequenceUpdateResponse:
+    requested_sequence_number = _sequence_from_export_sequence_payload(payload)
+    try:
+        sequence_number, updated = ExportService.set_next_export_sequence_number(
+            db,
+            requested_sequence_number,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.commit()
+    return ExportSequenceUpdateResponse(
+        sequence_number=sequence_number,
+        fiche_no=ExportService._fiche_no_for_sequence(sequence_number),
+        requested_sequence_number=requested_sequence_number,
+        updated=updated,
+    )
 
 
 @router.get("/{order_id}", response_model=OrderDetail)
@@ -492,3 +535,20 @@ def _payload_decimal(value) -> Decimal | None:
         return Decimal(str(value))
     except (InvalidOperation, ValueError):
         return None
+
+
+def _sequence_from_export_sequence_payload(payload: ExportSequenceUpdate) -> int:
+    sequence_number = payload.sequence_number
+    if payload.fiche_no:
+        fiche_sequence = ExportService.sequence_from_fiche_no(payload.fiche_no)
+        if fiche_sequence is None:
+            raise HTTPException(status_code=400, detail="Invalid fiche number.")
+        if sequence_number is not None and sequence_number != fiche_sequence:
+            raise HTTPException(
+                status_code=400,
+                detail="Sequence number and fiche number do not match.",
+            )
+        sequence_number = fiche_sequence
+    if sequence_number is None:
+        raise HTTPException(status_code=400, detail="Sequence number or fiche number is required.")
+    return sequence_number

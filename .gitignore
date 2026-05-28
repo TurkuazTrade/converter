@@ -13,7 +13,7 @@ __pycache__/
 .ruff_cache/
 .env
 AGENTS.md
-data/app.db
+data/*.db
 data/app.db-*
 data/storage/source/*
 data/storage/export/*
