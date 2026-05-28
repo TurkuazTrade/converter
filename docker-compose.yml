@@ -1,4 +1,32 @@
 services:
+  identity-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: identity
+      POSTGRES_USER: identity
+      POSTGRES_PASSWORD: identity_password
+    volumes:
+      - identity_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U identity -d identity"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  identity:
+    build:
+      context: ../../identity-service
+    env_file:
+      - ../../identity-service/.env.example
+    environment:
+      - DATABASE_URL=postgresql+psycopg://identity:identity_password@identity-postgres:5432/identity
+      - SECRET_KEY=dev-change-me-32-byte-secret-key-for-turkuaz-identity
+      - ALGORITHM=HS256
+      - BACKEND_CORS_ORIGINS=["http://localhost:5173","http://127.0.0.1:5173"]
+    depends_on:
+      identity-postgres:
+        condition: service_healthy
+
   api:
     build:
       context: ./apps/api
@@ -6,6 +34,7 @@ services:
       - ./apps/api/.env.example
     environment:
       - DATABASE_URL=sqlite:////data/app.db
+      - IDENTITY_API_URL=http://identity:8020/api/v1
       - IDENTITY_SECRET_KEY=dev-change-me-32-byte-secret-key-for-turkuaz-identity
       - IDENTITY_ALGORITHM=HS256
       - STORAGE_ROOT=/data/storage
@@ -15,6 +44,8 @@ services:
       - ./data:/data
     ports:
       - "8000:8000"
+    depends_on:
+      - identity
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   web:
@@ -22,7 +53,6 @@ services:
       context: ./apps/web
     environment:
       - VITE_API_URL=/api/v1
-      - VITE_IDENTITY_API_URL=http://localhost:8020/api/v1
       - VITE_PROXY_TARGET=http://api:8000
     volumes:
       - ./apps/web:/app
@@ -31,3 +61,6 @@ services:
       - "5173:5173"
     depends_on:
       - api
+
+volumes:
+  identity_postgres_data:

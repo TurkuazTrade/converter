@@ -1,28 +1,19 @@
 import { FormEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-
-const identityApiUrl = import.meta.env.VITE_IDENTITY_API_URL || 'http://localhost:8020/api/v1';
+import { api } from '../api/client';
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('user');
-  const [password, setPassword] = useState('password');
+  const [email, setEmail] = useState('admin@example.com');
+  const [password, setPassword] = useState('admin123');
   const [error, setError] = useState('');
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError('');
     try {
-      const response = await fetch(`${identityApiUrl}/auth/login`, {
-        method: 'POST',
-        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(data?.detail || `HTTP ${response.status}`);
-      }
-      localStorage.setItem('access_token', data.access_token);
+      const response = await api.post('/auth/login', { email, password });
+      localStorage.setItem('access_token', response.data.access_token);
       navigate('/upload');
     } catch {
       setError('Не удалось войти. Проверьте логин и пароль.');
