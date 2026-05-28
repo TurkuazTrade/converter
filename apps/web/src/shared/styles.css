@@ -3,37 +3,82 @@
 @tailwind utilities;
 
 :root {
-  --app-bg: #0b1220;
-  --app-surface: #111827;
-  --app-surface-muted: #0b1220;
-  --app-surface-soft: #172033;
-  --app-header: rgba(11, 18, 32, 0.94);
-  --app-sidebar: #0f172a;
-  --app-border: #1e293b;
-  --app-border-strong: #334155;
-  --app-text: #f8fafc;
-  --app-text-muted: #94a3b8;
-  --app-text-soft: #64748b;
-  --app-accent: #2563eb;
-  --app-accent-hover: #3b82f6;
-  --app-shadow: 0 20px 40px rgba(0, 0, 0, 0.24);
+  color-scheme: light;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --app-bg: #f4f7f6;
+  --app-surface: #ffffff;
+  --app-surface-muted: #eef4f2;
+  --app-surface-soft: rgba(255, 255, 255, 0.84);
+  --app-header: rgba(250, 252, 251, 0.88);
+  --app-sidebar: rgba(250, 252, 251, 0.86);
+  --app-border: #d8e2de;
+  --app-border-strong: #c4d3ce;
+  --app-text: #17201c;
+  --app-text-muted: #66736d;
+  --app-text-soft: #7a8c86;
+  --app-accent: #0d8177;
+  --app-accent-hover: #09655e;
+  --app-accent-soft: #d9f4ee;
+  --app-amber: #b7791f;
+  --app-amber-soft: #fff4d8;
+  --app-red: #b42318;
+  --app-red-soft: #fee4e2;
+  --app-shadow: 0 18px 45px rgba(24, 38, 32, 0.08);
+  --app-shadow-soft: 0 8px 26px rgba(24, 38, 32, 0.08);
+  --app-focus-ring: 0 0 0 3px rgba(13, 129, 119, 0.2);
 }
 
 :root.theme-light {
-  --app-bg: #f3f6fb;
+  color-scheme: light;
+  --app-bg: #f4f7f6;
   --app-surface: #ffffff;
-  --app-surface-muted: #f8fafc;
-  --app-surface-soft: #eef3fb;
-  --app-header: rgba(255, 255, 255, 0.94);
-  --app-sidebar: #ffffff;
-  --app-border: #d9e2ef;
-  --app-border-strong: #b7c4d6;
-  --app-text: #0f172a;
-  --app-text-muted: #526174;
-  --app-text-soft: #758398;
-  --app-accent: #2563eb;
-  --app-accent-hover: #1d4ed8;
-  --app-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+  --app-surface-muted: #eef4f2;
+  --app-surface-soft: rgba(255, 255, 255, 0.84);
+  --app-header: rgba(250, 252, 251, 0.88);
+  --app-sidebar: rgba(250, 252, 251, 0.86);
+  --app-border: #d8e2de;
+  --app-border-strong: #c4d3ce;
+  --app-text: #17201c;
+  --app-text-muted: #66736d;
+  --app-text-soft: #7a8c86;
+  --app-accent: #0d8177;
+  --app-accent-hover: #09655e;
+  --app-accent-soft: #d9f4ee;
+  --app-amber: #b7791f;
+  --app-amber-soft: #fff4d8;
+  --app-red: #b42318;
+  --app-red-soft: #fee4e2;
+  --app-shadow: 0 18px 45px rgba(24, 38, 32, 0.08);
+  --app-shadow-soft: 0 8px 26px rgba(24, 38, 32, 0.08);
+  --app-focus-ring: 0 0 0 3px rgba(13, 129, 119, 0.2);
+}
+
+:root.theme-dark {
+  color-scheme: dark;
+  --app-bg: #0d1412;
+  --app-surface: #17231f;
+  --app-surface-muted: #21342e;
+  --app-surface-soft: #192823;
+  --app-header: rgba(16, 28, 24, 0.9);
+  --app-sidebar: #101c18;
+  --app-border: #315047;
+  --app-border-strong: #48766b;
+  --app-text: #f2fbf8;
+  --app-text-muted: #b9cbc5;
+  --app-text-soft: #abc0ba;
+  --app-accent: #39c6b7;
+  --app-accent-hover: #5bd9cc;
+  --app-accent-soft: rgba(57, 198, 183, 0.16);
+  --app-amber: #f2be5c;
+  --app-amber-soft: rgba(242, 190, 92, 0.16);
+  --app-red: #ff8d85;
+  --app-red-soft: rgba(255, 141, 133, 0.16);
+  --app-shadow: 0 18px 48px rgba(0, 0, 0, 0.34);
+  --app-shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.26);
+  --app-focus-ring: 0 0 0 3px rgba(57, 198, 183, 0.24);
 }
 
 body {
@@ -42,8 +87,64 @@ body {
   @apply antialiased;
 }
 
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+input[type="checkbox"] {
+  accent-color: var(--app-accent);
+}
+
+input[type="file"]::file-selector-button {
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  background: var(--app-surface-muted);
+  color: var(--app-text);
+  cursor: pointer;
+  font-weight: 700;
+  margin-right: 12px;
+  padding: 8px 12px;
+}
+
+input[type="file"]::file-selector-button:hover {
+  background: var(--app-accent-soft);
+  color: var(--app-accent-hover);
+}
+
+select.input {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--app-text-soft) 50%),
+    linear-gradient(135deg, var(--app-text-soft) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) calc(50% - 3px),
+    calc(100% - 13px) calc(50% - 3px);
+  background-repeat: no-repeat;
+  background-size: 5px 5px, 5px 5px;
+  padding-right: 2.5rem;
+}
+
 .app-shell {
-  background: var(--app-bg);
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--app-accent) 12%, transparent), transparent 32rem),
+    var(--app-bg);
   color: var(--app-text);
   @apply min-h-screen;
 }
@@ -51,7 +152,7 @@ body {
 .app-header {
   background: var(--app-header);
   border-color: var(--app-border);
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  box-shadow: var(--app-shadow-soft);
   @apply sticky top-0 z-20 flex min-h-16 items-center justify-between border-b px-5 backdrop-blur-xl;
 }
 
@@ -61,10 +162,10 @@ body {
 }
 
 .brand-mark {
-  background: var(--app-accent);
+  background: linear-gradient(135deg, var(--app-accent-hover), #17201c 72%);
   color: white;
-  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.26);
-  @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-sm font-bold;
+  box-shadow: var(--app-shadow-soft);
+  @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-extrabold;
 }
 
 .brand-copy {
@@ -73,7 +174,7 @@ body {
 
 .brand-title {
   color: var(--app-text);
-  @apply block truncate text-sm font-semibold;
+  @apply block truncate text-sm font-bold;
 }
 
 .brand-subtitle {
@@ -82,9 +183,9 @@ body {
 }
 
 .environment-pill {
-  background: color-mix(in srgb, #10b981 14%, var(--app-surface));
-  border-color: color-mix(in srgb, #10b981 34%, var(--app-border));
-  color: #34d399;
+  background: var(--app-accent-soft);
+  border-color: color-mix(in srgb, var(--app-accent) 28%, var(--app-border));
+  color: var(--app-accent-hover);
   @apply items-center rounded-full border px-3 py-1 text-xs font-medium;
 }
 
@@ -99,27 +200,29 @@ body {
 }
 
 .theme-toggle {
-  background: var(--app-surface-muted);
+  background: var(--app-surface-soft);
   border-color: var(--app-border);
-  @apply inline-flex items-center gap-1 rounded-md border p-1;
+  box-shadow: var(--app-shadow-soft);
+  @apply inline-flex items-center gap-1 rounded-xl border p-1;
 }
 
 .theme-toggle-icon {
   color: var(--app-text-soft);
-  @apply flex h-8 w-8 items-center justify-center rounded text-sm font-medium transition;
+  @apply flex h-8 w-8 items-center justify-center rounded-lg text-sm font-medium transition;
 }
 
 .theme-toggle-icon-active {
   background: var(--app-accent);
   color: white;
-  box-shadow: 0 8px 16px rgba(37, 99, 235, 0.24);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--app-accent) 26%, transparent);
 }
 
 .header-action {
   border-color: var(--app-border-strong);
   color: var(--app-text);
-  background: color-mix(in srgb, var(--app-surface) 70%, transparent);
-  @apply rounded-md border px-3 py-2 text-sm font-medium transition;
+  background: var(--app-surface-soft);
+  box-shadow: var(--app-shadow-soft);
+  @apply rounded-xl border px-3 py-2 text-sm font-bold transition;
 }
 
 .header-action:hover {
@@ -128,27 +231,28 @@ body {
 }
 
 .sidebar-toggle {
-  background: color-mix(in srgb, var(--app-surface-soft) 58%, transparent);
-  border-color: color-mix(in srgb, var(--app-border-strong) 78%, transparent);
+  background: var(--app-surface-soft);
+  border-color: var(--app-border);
   color: var(--app-text);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 10px 22px rgba(15, 23, 42, 0.12);
-  @apply h-10 w-10 items-center justify-center rounded-md border p-1 text-sm font-medium transition;
+  box-shadow: var(--app-shadow-soft);
+  @apply h-10 w-10 items-center justify-center rounded-xl border p-1 text-sm font-medium transition;
 }
 
 .sidebar-toggle:hover {
-  background: color-mix(in srgb, var(--app-accent) 14%, var(--app-surface-soft));
-  border-color: color-mix(in srgb, var(--app-accent) 50%, var(--app-border-strong));
-  color: var(--app-text);
+  background: var(--app-accent-soft);
+  border-color: color-mix(in srgb, var(--app-accent) 36%, var(--app-border-strong));
+  color: var(--app-accent-hover);
 }
 
 .sidebar-toggle:focus-visible {
-  @apply outline-none ring-2 ring-blue-500 ring-offset-2 ring-offset-slate-950;
+  box-shadow: var(--app-focus-ring);
+  @apply outline-none;
 }
 
 .sidebar-toggle-icon {
-  background: color-mix(in srgb, var(--app-accent) 16%, var(--app-surface-muted));
-  border-color: color-mix(in srgb, var(--app-accent) 28%, var(--app-border));
-  @apply flex h-7 w-7 flex-col justify-center gap-1 rounded border px-1.5;
+  background: transparent;
+  border-color: transparent;
+  @apply flex h-7 w-7 flex-col justify-center gap-1 rounded-lg border px-1.5;
 }
 
 .sidebar-toggle-icon span {
@@ -164,7 +268,7 @@ body {
   background: var(--app-sidebar);
   border-color: var(--app-border);
   box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.02);
-  @apply sticky top-16 hidden h-[calc(100vh-4rem)] w-72 shrink-0 flex-col gap-4 overflow-y-auto border-r px-4 py-5 text-sm md:flex;
+  @apply sticky top-16 hidden h-[calc(100vh-4rem)] w-72 shrink-0 flex-col gap-4 overflow-y-auto border-r px-4 py-5 text-sm backdrop-blur-xl md:flex;
 }
 
 .app-sidebar-hidden {
@@ -176,6 +280,14 @@ body {
   @apply space-y-2 border-b pb-4 last:border-b-0;
 }
 
+.sidebar-section details {
+  @apply space-y-1;
+}
+
+.sidebar-section details[open] .sidebar-summary {
+  color: var(--app-text);
+}
+
 .sidebar-label {
   color: var(--app-text-soft);
   @apply px-3 text-xs font-semibold uppercase tracking-wide;
@@ -183,34 +295,51 @@ body {
 
 .sidebar-link {
   color: var(--app-text-muted);
-  @apply relative block rounded-md px-3 py-2 font-medium transition;
+  @apply relative block rounded-xl px-3 py-2 font-bold transition;
+}
+
+.sidebar-link::before {
+  content: "";
+  background: var(--app-accent);
+  opacity: 0;
+  transform: scaleY(0.35);
+  @apply absolute left-0 top-2 bottom-2 w-1 rounded-r-full transition;
 }
 
 .sidebar-link:hover {
-  background: var(--app-surface-soft);
-  color: var(--app-text);
+  background: var(--app-accent-soft);
+  color: var(--app-accent-hover);
 }
 
 .sidebar-link-active {
-  background: color-mix(in srgb, var(--app-accent) 92%, var(--app-surface));
-  color: white;
-  box-shadow: 0 12px 22px rgba(37, 99, 235, 0.18);
+  background: var(--app-accent-soft);
+  color: var(--app-accent-hover);
+}
+
+.sidebar-link-active::before {
+  opacity: 1;
+  transform: scaleY(1);
 }
 
 .sidebar-summary {
   color: var(--app-text-soft);
-  @apply cursor-pointer rounded-md px-3 py-2 text-xs font-semibold uppercase tracking-wide transition;
+  @apply cursor-pointer rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-wide transition;
+}
+
+.sidebar-summary::marker {
+  color: var(--app-accent);
 }
 
 .sidebar-summary:hover {
-  background: var(--app-surface-soft);
-  color: var(--app-text-muted);
+  background: var(--app-surface-muted);
+  color: var(--app-text);
 }
 
 .sidebar-status {
-  background: color-mix(in srgb, var(--app-surface) 70%, transparent);
+  background: var(--app-surface-soft);
   border-color: var(--app-border);
-  @apply mt-auto flex items-center justify-between rounded-md border px-3 py-3 text-xs;
+  box-shadow: var(--app-shadow-soft);
+  @apply mt-auto flex items-center justify-between rounded-xl border px-3 py-3 text-xs;
 }
 
 .sidebar-status-label {
@@ -236,7 +365,7 @@ body {
 .app-footer {
   border-color: var(--app-border);
   color: var(--app-text-soft);
-  background: color-mix(in srgb, var(--app-surface) 42%, transparent);
+  background: color-mix(in srgb, var(--app-surface-soft) 72%, transparent);
   @apply mt-auto flex flex-wrap items-center justify-between gap-2 border-t px-6 py-4 text-xs;
 }
 
@@ -244,41 +373,58 @@ body {
   @apply mx-auto w-full min-w-0 max-w-7xl px-6 py-6;
 }
 
+.page h1 {
+  color: var(--app-text);
+  @apply text-2xl font-bold leading-tight;
+}
+
+.page h2,
+.page h3 {
+  color: var(--app-text);
+}
+
 .panel {
-  background: var(--app-surface);
+  background: var(--app-surface-soft);
   border-color: var(--app-border);
   box-shadow: var(--app-shadow);
-  @apply min-w-0 rounded-lg border p-5;
+  backdrop-filter: blur(12px);
+  @apply min-w-0 rounded-[14px] border p-5;
 }
 
 .compact-panel {
-  background: color-mix(in srgb, var(--app-surface) 72%, transparent);
+  background: var(--app-surface-soft);
   border-color: var(--app-border);
-  @apply min-w-0 rounded-md border px-4 py-3;
+  box-shadow: var(--app-shadow-soft);
+  @apply min-w-0 rounded-xl border px-4 py-3;
 }
 
 .button {
-  background: var(--app-accent);
-  @apply rounded-md px-4 py-2 text-sm font-medium text-white transition;
+  background: linear-gradient(135deg, var(--app-accent), var(--app-accent-hover));
+  box-shadow: 0 12px 24px color-mix(in srgb, var(--app-accent) 22%, transparent);
+  @apply inline-flex min-h-10 items-center justify-center rounded-xl px-4 py-2 text-sm font-extrabold text-white transition;
 }
 
 .button:hover {
   background: var(--app-accent-hover);
+  transform: translateY(-1px);
 }
 
 .button-secondary {
-  background: var(--app-surface-soft);
+  background: var(--app-surface);
+  border-color: var(--app-border);
   color: var(--app-text);
-  @apply rounded-md px-4 py-2 text-sm font-medium transition;
+  @apply inline-flex min-h-10 items-center justify-center rounded-xl border px-4 py-2 text-sm font-extrabold transition;
 }
 
 .button-secondary:hover {
-  filter: brightness(1.05);
+  background: var(--app-accent-soft);
+  border-color: color-mix(in srgb, var(--app-accent) 38%, var(--app-border));
+  color: var(--app-accent-hover);
 }
 
 .button-ghost {
   color: var(--app-text-muted);
-  @apply rounded-md px-3 py-2 text-sm transition;
+  @apply inline-flex min-h-9 items-center justify-center rounded-xl px-3 py-2 text-sm font-bold transition;
 }
 
 .button-ghost:hover {
@@ -291,10 +437,10 @@ body {
 }
 
 .export-type-option {
-  background: color-mix(in srgb, var(--app-surface-muted) 78%, transparent);
+  background: var(--app-surface);
   border-color: var(--app-border);
   color: var(--app-text-muted);
-  @apply relative inline-flex min-h-9 cursor-pointer select-none items-center gap-2 rounded-md border px-3 py-2 text-sm transition;
+  @apply relative inline-flex min-h-9 cursor-pointer select-none items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold transition;
 }
 
 .export-type-option:hover {
@@ -303,9 +449,9 @@ body {
 }
 
 .export-type-option--checked {
-  background: color-mix(in srgb, var(--app-accent) 22%, var(--app-surface-muted));
+  background: var(--app-accent-soft);
   border-color: color-mix(in srgb, var(--app-accent) 62%, var(--app-border));
-  color: var(--app-text);
+  color: var(--app-accent-hover);
 }
 
 .export-type-option input {
@@ -347,29 +493,66 @@ body {
 .button:disabled,
 .button-secondary:disabled {
   @apply cursor-not-allowed opacity-50;
+  transform: none;
+}
+
+.button:focus-visible,
+.button-secondary:focus-visible,
+.button-ghost:focus-visible,
+.header-action:focus-visible,
+.theme-toggle:focus-visible,
+.sidebar-link:focus-visible,
+.export-type-option:has(input:focus-visible) {
+  box-shadow: var(--app-focus-ring);
+  @apply outline-none;
 }
 
 .input {
-  background: var(--app-surface-muted);
-  border-color: var(--app-border-strong);
+  background: var(--app-surface);
+  border-color: var(--app-border);
   color: var(--app-text);
-  @apply rounded-md border px-3 py-2 text-sm outline-none transition focus:border-blue-500;
+  @apply min-h-10 rounded-xl border px-3 py-2 text-sm outline-none transition;
+}
+
+.input:focus-visible {
+  border-color: var(--app-accent);
+  box-shadow: var(--app-focus-ring);
 }
 
 .table {
-  @apply min-w-max w-full border-collapse text-left text-sm;
+  @apply min-w-max w-full border-separate border-spacing-0 text-left text-sm;
 }
 
 .table th {
   background: var(--app-surface-muted);
   border-color: var(--app-border);
   color: var(--app-text-muted);
-  @apply border-b px-3 py-2 text-xs font-semibold uppercase tracking-wide;
+  @apply sticky top-0 z-10 border-b px-3 py-3 text-xs font-bold uppercase tracking-wide;
 }
 
 .table td {
   border-color: var(--app-border);
-  @apply border-b px-3 py-2 align-top;
+  color: var(--app-text);
+  @apply border-b px-3 py-3 align-top;
+}
+
+.table tbody tr {
+  transition: background-color 120ms ease;
+}
+
+.table tbody tr:hover {
+  background: var(--app-surface-muted);
+}
+
+.table a,
+.table button:not(.button):not(.button-secondary):not(.button-ghost) {
+  color: var(--app-accent-hover);
+  font-weight: 700;
+}
+
+.table a:hover,
+.table button:not(.button):not(.button-secondary):not(.button-ghost):hover {
+  color: var(--app-accent);
 }
 
 .products-table {
@@ -530,36 +713,71 @@ body {
   background: var(--app-surface-muted);
   border-color: var(--app-border);
   color: var(--app-text-muted);
-  @apply rounded-full border px-3 py-1 text-xs;
+  @apply rounded-full border px-3 py-1 text-xs font-bold;
 }
 
 .status-pill-ok {
-  @apply rounded-full border border-emerald-700 bg-emerald-950/40 px-3 py-1 text-xs text-emerald-200;
+  background: var(--app-accent-soft);
+  border-color: color-mix(in srgb, var(--app-accent) 38%, var(--app-border));
+  color: var(--app-accent-hover);
+  @apply rounded-full border px-3 py-1 text-xs font-bold;
 }
 
 .status-pill-warn {
-  @apply rounded-full border border-amber-700 bg-amber-950/40 px-3 py-1 text-xs text-amber-200;
+  background: var(--app-amber-soft);
+  border-color: color-mix(in srgb, var(--app-amber) 38%, var(--app-border));
+  color: var(--app-amber);
+  @apply rounded-full border px-3 py-1 text-xs font-bold;
 }
 
 .status-pill-danger {
-  @apply rounded-full border border-red-700 bg-red-950/40 px-3 py-1 text-xs text-red-200;
+  background: var(--app-red-soft);
+  border-color: color-mix(in srgb, var(--app-red) 38%, var(--app-border));
+  color: var(--app-red);
+  @apply rounded-full border px-3 py-1 text-xs font-bold;
 }
 
+.fixed.inset-0.bg-black\/50 {
+  background: color-mix(in srgb, #0d1412 54%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.border-dashed {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--app-accent-soft) 42%, transparent), transparent),
+    var(--app-surface);
+  border-color: color-mix(in srgb, var(--app-accent) 42%, var(--app-border));
+}
+
+.border-dashed:hover {
+  border-color: var(--app-accent);
+}
+
+.bg-slate-950,
 .theme-light .bg-slate-950 {
   background-color: var(--app-surface-muted);
 }
 
+.bg-slate-900,
+.bg-slate-900\/95,
 .theme-light .bg-slate-900,
 .theme-light .bg-slate-900\/95 {
   background-color: var(--app-surface);
 }
 
+.bg-slate-800,
+.hover\:bg-slate-800:hover,
+.hover\:bg-slate-900:hover,
 .theme-light .bg-slate-800,
 .theme-light .hover\:bg-slate-800:hover,
 .theme-light .hover\:bg-slate-900:hover {
-  background-color: var(--app-surface-soft);
+  background-color: var(--app-accent-soft);
 }
 
+.border-slate-900,
+.border-slate-800,
+.border-slate-700,
+.border-slate-600,
 .theme-light .border-slate-900,
 .theme-light .border-slate-800,
 .theme-light .border-slate-700,
@@ -567,24 +785,68 @@ body {
   border-color: var(--app-border);
 }
 
+.text-slate-100,
+.text-slate-200,
+.text-slate-300,
 .theme-light .text-slate-100,
 .theme-light .text-slate-200,
 .theme-light .text-slate-300 {
   color: var(--app-text);
 }
 
+.text-slate-400,
 .theme-light .text-slate-400 {
   color: var(--app-text-muted);
 }
 
+.text-slate-500,
 .theme-light .text-slate-500 {
   color: var(--app-text-soft);
+}
+
+.text-blue-300,
+.text-sky-300,
+.text-cyan-300,
+.text-emerald-300,
+.hover\:text-blue-200:hover,
+.hover\:text-sky-200:hover,
+.hover\:text-emerald-200:hover {
+  color: var(--app-accent-hover);
+}
+
+.text-amber-100,
+.text-amber-200,
+.text-amber-300 {
+  color: var(--app-amber);
+}
+
+.text-red-300,
+.text-red-400 {
+  color: var(--app-red);
+}
+
+.border-amber-600,
+.border-amber-700,
+.border-amber-800 {
+  border-color: color-mix(in srgb, var(--app-amber) 38%, var(--app-border));
+}
+
+.bg-amber-950\/90,
+.bg-amber-950\/40,
+.bg-amber-950\/30 {
+  background-color: var(--app-amber-soft);
+}
+
+.rounded-md,
+.rounded-lg {
+  border-radius: 12px;
 }
 
 .theme-light .brand-lockup .text-white {
   color: var(--app-text);
 }
 
+.text-white,
 .theme-light .hover\:text-white:hover {
   color: var(--app-text);
 }

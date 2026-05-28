@@ -6,6 +6,8 @@ services:
       - ./apps/api/.env.example
     environment:
       - DATABASE_URL=sqlite:////data/app.db
+      - IDENTITY_SECRET_KEY=dev-change-me-32-byte-secret-key-for-turkuaz-identity
+      - IDENTITY_ALGORITHM=HS256
       - STORAGE_ROOT=/data/storage
       - TEMPLATE_PATH=/data/templates/template_zakaz.xlsx
     volumes:
@@ -20,6 +22,7 @@ services:
       context: ./apps/web
     environment:
       - VITE_API_URL=/api/v1
+      - VITE_IDENTITY_API_URL=http://localhost:8020/api/v1
       - VITE_PROXY_TARGET=http://api:8000
     volumes:
       - ./apps/web:/app

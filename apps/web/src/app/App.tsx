@@ -14,7 +14,7 @@ function Layout() {
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     const saved = localStorage.getItem('theme');
     if (saved === 'dark' || saved === 'light') return saved;
-    return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
   const [sidebarHidden, setSidebarHidden] = useState(() => localStorage.getItem('sidebarHidden') === 'true');
 
@@ -60,10 +60,10 @@ function Layout() {
             </span>
           </button>
           <Link to="/upload" className="brand-lockup">
-            <span className="brand-mark" aria-hidden="true">T</span>
+            <span className="brand-mark" aria-hidden="true">C</span>
             <span className="brand-copy">
-              <span className="brand-title">Turkuaz CRM</span>
-              <span className="brand-subtitle">Order operations</span>
+              <span className="brand-title">Turkuaz Converter</span>
+              <span className="brand-subtitle">Order converter</span>
             </span>
           </Link>
         </div>
@@ -142,7 +142,7 @@ function Layout() {
             <Route path="/reports/:reportType" element={<ReportsPlaceholderPage />} />
           </Routes>
           <footer className="app-footer">
-            <span className="font-medium">Turkuaz CRM</span>
+            <span className="font-medium">Turkuaz Converter</span>
             <span>Модуль конвертера</span>
             <span>Development build</span>
           </footer>

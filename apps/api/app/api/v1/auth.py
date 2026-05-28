@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps import get_current_user
+from app.api.v1.deps import get_identity_claims
 from app.core.config import settings
 from app.core.security import create_access_token, verify_password
 from app.db.session import get_db
@@ -37,10 +38,17 @@ def _login_email(login: str) -> str:
 
 
 @router.get("/me", response_model=CurrentUserResponse)
-def me(current_user: Annotated[User, Depends(get_current_user)]) -> CurrentUserResponse:
+def me(
+    current_user: Annotated[User, Depends(get_current_user)],
+    claims: Annotated[dict[str, object], Depends(get_identity_claims)],
+) -> CurrentUserResponse:
+    roles = claims.get("roles")
+    role = current_user.role
+    if isinstance(roles, list) and roles:
+        role = str(roles[0])
     return CurrentUserResponse(
         id=current_user.id,
         email=current_user.email,
         full_name=current_user.full_name,
-        role=current_user.role,
+        role=role,
     )

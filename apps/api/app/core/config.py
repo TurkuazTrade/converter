@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///../../data/app.db"
     secret_key: str = "dev-change-me-32-byte-secret-key-for-turkuaz-crm"
     algorithm: str = "HS256"
+    identity_secret_key: str = "dev-change-me-32-byte-secret-key-for-turkuaz-identity"
+    identity_algorithm: str = "HS256"
     access_token_expire_minutes: int = 720
     auto_create_admin: bool = True
     default_admin_email: str = "admin@example.com"
