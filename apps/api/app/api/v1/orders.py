@@ -64,11 +64,7 @@ def list_orders(
     limit: int = Query(default=100, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> list[OrderRead]:
-    orders = OrderRepository(db).list(limit=limit, offset=offset)
-    for order in orders:
-        _refresh_order_state(db, order)
-    db.commit()
-    return orders
+    return OrderRepository(db).list(limit=limit, offset=offset)
 
 
 @router.get("/export-sequence", response_model=ExportSequenceRead)
