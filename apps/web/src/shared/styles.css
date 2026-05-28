@@ -149,6 +149,10 @@ select.input {
   @apply min-h-screen;
 }
 
+.app-shell.sidebar-collapsed .app-sidebar {
+  @apply w-[78px] px-3;
+}
+
 .app-header {
   background: var(--app-header);
   border-color: var(--app-border);
@@ -268,6 +272,9 @@ select.input {
   background: var(--app-sidebar);
   border-color: var(--app-border);
   box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.02);
+  transition:
+    width 180ms ease,
+    padding 180ms ease;
   @apply sticky top-16 hidden h-[calc(100vh-4rem)] w-72 shrink-0 flex-col gap-4 overflow-y-auto border-r px-4 py-5 text-sm backdrop-blur-xl md:flex;
 }
 
@@ -295,7 +302,7 @@ select.input {
 
 .sidebar-link {
   color: var(--app-text-muted);
-  @apply relative block rounded-xl px-3 py-2 font-bold transition;
+  @apply relative flex min-h-[42px] items-center gap-3 rounded-xl px-3 py-2 font-bold transition;
 }
 
 .sidebar-link::before {
@@ -323,11 +330,15 @@ select.input {
 
 .sidebar-summary {
   color: var(--app-text-soft);
-  @apply cursor-pointer rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-wide transition;
+  @apply flex min-h-[38px] cursor-pointer list-none items-center gap-3 rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-wide transition;
 }
 
 .sidebar-summary::marker {
-  color: var(--app-accent);
+  content: "";
+}
+
+.sidebar-summary::-webkit-details-marker {
+  display: none;
 }
 
 .sidebar-summary:hover {
@@ -335,11 +346,99 @@ select.input {
   color: var(--app-text);
 }
 
+.sidebar-chevron {
+  color: var(--app-text-soft);
+  margin-left: auto;
+  transition:
+    color 150ms ease,
+    transform 150ms ease;
+  @apply grid h-6 w-6 shrink-0 place-items-center rounded-md;
+}
+
+.sidebar-summary:hover .sidebar-chevron {
+  color: var(--app-accent-hover);
+}
+
+.sidebar-section details[open] .sidebar-chevron {
+  transform: rotate(180deg);
+}
+
+.sidebar-item-mark {
+  background: color-mix(in srgb, var(--app-accent) 12%, var(--app-surface));
+  border: 1px solid color-mix(in srgb, var(--app-accent) 24%, var(--app-border));
+  color: var(--app-accent-hover);
+  @apply grid h-7 w-7 shrink-0 place-items-center rounded-lg text-xs font-extrabold normal-case;
+}
+
+.sidebar-item-label {
+  @apply min-w-0 truncate;
+}
+
+.sidebar-platform-links,
+.sidebar-controls {
+  border-color: var(--app-border);
+  @apply grid gap-2 border-t pt-4;
+}
+
+.sidebar-platform-links {
+  @apply mt-auto;
+}
+
+.sidebar-platform-links a,
+.sidebar-control {
+  background: transparent;
+  color: var(--app-text-muted);
+  @apply flex min-h-[42px] w-full items-center gap-3 rounded-xl border-0 px-3 py-2 text-left text-sm font-bold transition;
+}
+
+.sidebar-platform-links a:hover,
+.sidebar-control:hover {
+  background: var(--app-accent-soft);
+  color: var(--app-accent-hover);
+}
+
+.sidebar-control:focus-visible,
+.sidebar-platform-links a:focus-visible {
+  box-shadow: var(--app-focus-ring);
+  @apply outline-none;
+}
+
+.sidebar-collapsed .sidebar-item-label,
+.sidebar-collapsed .sidebar-chevron,
+.sidebar-collapsed .sidebar-status-label,
+.sidebar-collapsed .sidebar-status-value {
+  display: none;
+}
+
+.sidebar-collapsed .sidebar-section {
+  @apply pb-3;
+}
+
+.sidebar-collapsed .sidebar-summary,
+.sidebar-collapsed .sidebar-link,
+.sidebar-collapsed .sidebar-platform-links a,
+.sidebar-collapsed .sidebar-control {
+  @apply justify-center px-0;
+}
+
+.sidebar-collapsed .sidebar-link::before {
+  @apply left-[-12px];
+}
+
+.sidebar-collapsed .sidebar-platform-links,
+.sidebar-collapsed .sidebar-controls {
+  @apply gap-2;
+}
+
+.sidebar-collapsed .sidebar-status {
+  @apply justify-center px-2;
+}
+
 .sidebar-status {
   background: var(--app-surface-soft);
   border-color: var(--app-border);
   box-shadow: var(--app-shadow-soft);
-  @apply mt-auto flex items-center justify-between rounded-xl border px-3 py-3 text-xs;
+  @apply flex items-center justify-between rounded-xl border px-3 py-3 text-xs;
 }
 
 .sidebar-status-label {
