@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { PaginationControls } from '../components/PaginationControls';
-import { downloadBlob, filenameFromContentDisposition } from '../shared/download';
+import { downloadBlob, downloadErrorMessage, filenameFromContentDisposition } from '../shared/download';
 
 type Order = {
   id: number;
@@ -58,7 +58,7 @@ export function OrdersHistoryPage() {
       downloadBlob(response.data, filename);
       await queryClient.invalidateQueries({ queryKey: ['orders'] });
     } catch (err: any) {
-      setDownloadError(err.response?.data?.detail ?? 'Excel можно скачать только после сопоставления клиента и товаров.');
+      setDownloadError(await downloadErrorMessage(err, 'Excel можно скачать только после сопоставления клиента и товаров.'));
     }
   }
 

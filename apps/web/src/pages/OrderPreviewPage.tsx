@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
-import { downloadBlob, filenameFromContentDisposition } from '../shared/download';
+import { downloadBlob, downloadErrorMessage, filenameFromContentDisposition } from '../shared/download';
 
 type PreviewItem = {
   id: number;
@@ -129,7 +129,7 @@ export function OrderPreviewPage() {
       }
       await queryClient.invalidateQueries({ queryKey: ['order-preview', orderId] });
     } catch (err: any) {
-      setActionError(err.response?.data?.detail ?? 'Не удалось сформировать Excel');
+      setActionError(await downloadErrorMessage(err, 'Не удалось сформировать Excel'));
     }
   }
 
