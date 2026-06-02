@@ -18,3 +18,5 @@ class CurrentUserResponse(BaseModel):
     email: EmailStr
     full_name: str
     role: str
+    branch_id: int | None = None
+    branch_name: str | None = None

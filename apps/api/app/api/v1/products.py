@@ -49,7 +49,7 @@ def list_products(
     limit: int = Query(default=100, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> list[ProductRead]:
-    return ProductRepository(db).list(
+    return ProductRepository(db, branch_id=current_user.branch_id).list(
         search=search,
         limit=limit,
         offset=offset,
@@ -72,24 +72,40 @@ def list_product_types(
         normalized
         for value in db.scalars(
             select(Product.product_type)
-            .where(Product.deleted_at.is_(None), Product.product_type.is_not(None), Product.product_type != "")
+            .where(
+                Product.deleted_at.is_(None),
+                Product.product_type.is_not(None),
+                Product.product_type != "",
+                *_branch_filters(Product, current_user.branch_id),
+            )
             .distinct()
         )
         if (normalized := normalize_product_type(value))
     }
     product_types.update(
         value
-        for value in _list_dictionary_names(db, ProductTypeCatalog, normalize_as_type=True)
+        for value in _list_dictionary_names(
+            db,
+            ProductTypeCatalog,
+            branch_id=current_user.branch_id,
+            normalize_as_type=True,
+        )
         if value
     )
     rules: dict[str, bool] = {}
-    for rule in db.scalars(select(ProductTypeExportRule)):
+    for rule in db.scalars(
+        select(ProductTypeExportRule).where(*_branch_filters(ProductTypeExportRule, current_user.branch_id))
+    ):
         normalized = normalize_product_type(rule.product_type)
         if normalized:
             rules[normalized] = rules.get(normalized, False) or rule.exclude_from_export
     product_types.update(rules)
     return [
-        ProductTypeExportRuleRead(product_type=product_type, exclude_from_export=rules.get(product_type, False))
+        ProductTypeExportRuleRead(
+            branch_id=current_user.branch_id,
+            product_type=product_type,
+            exclude_from_export=rules.get(product_type, False),
+        )
         for product_type in sorted(product_types, key=lambda value: value.casefold())
     ]
 
@@ -103,7 +119,12 @@ def product_filter_options(
         values: dict[str, str] = {}
         for value in db.scalars(
             select(column)
-            .where(Product.deleted_at.is_(None), column.is_not(None), column != "")
+            .where(
+                Product.deleted_at.is_(None),
+                column.is_not(None),
+                column != "",
+                *_branch_filters(Product, current_user.branch_id),
+            )
             .distinct()
             .order_by(column)
         ):
@@ -113,9 +134,24 @@ def product_filter_options(
         return sorted(values.values(), key=lambda value: value.casefold())
 
     return {
-        "product_types": _merged_dictionary_values(db, ProductTypeCatalog, distinct_values(Product.product_type)),
-        "brands": _merged_dictionary_values(db, ProductBrand, distinct_values(Product.brand)),
-        "trade_marks": _merged_dictionary_values(db, ProductTradeMark, distinct_values(Product.trade_mark)),
+        "product_types": _merged_dictionary_values(
+            db,
+            ProductTypeCatalog,
+            distinct_values(Product.product_type),
+            branch_id=current_user.branch_id,
+        ),
+        "brands": _merged_dictionary_values(
+            db,
+            ProductBrand,
+            distinct_values(Product.brand),
+            branch_id=current_user.branch_id,
+        ),
+        "trade_marks": _merged_dictionary_values(
+            db,
+            ProductTradeMark,
+            distinct_values(Product.trade_mark),
+            branch_id=current_user.branch_id,
+        ),
     }
 
 
@@ -124,7 +160,7 @@ def list_brands(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> list[ProductDictionaryRead]:
-    return _list_dictionary(db, ProductBrand)
+    return _list_dictionary(db, ProductBrand, branch_id=current_user.branch_id)
 
 
 @router.post("/brands", response_model=ProductDictionaryRead)
@@ -133,7 +169,7 @@ def create_brand(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> ProductDictionaryRead:
-    return _create_dictionary_item(db, ProductBrand, payload)
+    return _create_dictionary_item(db, ProductBrand, payload, branch_id=current_user.branch_id)
 
 
 @router.patch("/brands/{item_id}", response_model=ProductDictionaryRead)
@@ -143,7 +179,7 @@ def update_brand(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> ProductDictionaryRead:
-    return _update_dictionary_item(db, ProductBrand, item_id, payload)
+    return _update_dictionary_item(db, ProductBrand, item_id, payload, branch_id=current_user.branch_id)
 
 
 @router.get("/trade-marks", response_model=list[ProductDictionaryRead])
@@ -151,7 +187,7 @@ def list_trade_marks(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> list[ProductDictionaryRead]:
-    return _list_dictionary(db, ProductTradeMark)
+    return _list_dictionary(db, ProductTradeMark, branch_id=current_user.branch_id)
 
 
 @router.post("/trade-marks", response_model=ProductDictionaryRead)
@@ -160,7 +196,7 @@ def create_trade_mark(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> ProductDictionaryRead:
-    return _create_dictionary_item(db, ProductTradeMark, payload)
+    return _create_dictionary_item(db, ProductTradeMark, payload, branch_id=current_user.branch_id)
 
 
 @router.patch("/trade-marks/{item_id}", response_model=ProductDictionaryRead)
@@ -170,7 +206,7 @@ def update_trade_mark(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> ProductDictionaryRead:
-    return _update_dictionary_item(db, ProductTradeMark, item_id, payload)
+    return _update_dictionary_item(db, ProductTradeMark, item_id, payload, branch_id=current_user.branch_id)
 
 
 @router.get("/catalog-types", response_model=list[ProductDictionaryRead])
@@ -178,7 +214,7 @@ def list_catalog_types(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> list[ProductDictionaryRead]:
-    return _list_dictionary(db, ProductTypeCatalog)
+    return _list_dictionary(db, ProductTypeCatalog, branch_id=current_user.branch_id)
 
 
 @router.post("/catalog-types", response_model=ProductDictionaryRead)
@@ -187,7 +223,13 @@ def create_catalog_type(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> ProductDictionaryRead:
-    return _create_dictionary_item(db, ProductTypeCatalog, payload, normalize_as_type=True)
+    return _create_dictionary_item(
+        db,
+        ProductTypeCatalog,
+        payload,
+        branch_id=current_user.branch_id,
+        normalize_as_type=True,
+    )
 
 
 @router.patch("/catalog-types/{item_id}", response_model=ProductDictionaryRead)
@@ -197,7 +239,14 @@ def update_catalog_type(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> ProductDictionaryRead:
-    return _update_dictionary_item(db, ProductTypeCatalog, item_id, payload, normalize_as_type=True)
+    return _update_dictionary_item(
+        db,
+        ProductTypeCatalog,
+        item_id,
+        payload,
+        branch_id=current_user.branch_id,
+        normalize_as_type=True,
+    )
 
 
 @router.patch("/types/export-exclusion", response_model=ProductTypeExportRuleRead)
@@ -212,11 +261,16 @@ def update_product_type_export_exclusion(
         raise HTTPException(status_code=400, detail="Product type is required")
     rule = db.scalar(
         select(ProductTypeExportRule).where(
-            func.lower(ProductTypeExportRule.product_type) == product_type.casefold()
+            func.lower(ProductTypeExportRule.product_type) == product_type.casefold(),
+            *_branch_filters(ProductTypeExportRule, current_user.branch_id),
         )
     )
     if rule is None:
-        rule = ProductTypeExportRule(product_type=product_type, exclude_from_export=payload.exclude_from_export)
+        rule = ProductTypeExportRule(
+            branch_id=current_user.branch_id,
+            product_type=product_type,
+            exclude_from_export=payload.exclude_from_export,
+        )
         db.add(rule)
     else:
         rule.exclude_from_export = payload.exclude_from_export
@@ -224,6 +278,7 @@ def update_product_type_export_exclusion(
     db.refresh(rule)
     return ProductTypeExportRuleRead(
         product_type=rule.product_type,
+        branch_id=rule.branch_id,
         exclude_from_export=rule.exclude_from_export,
     )
 
@@ -238,6 +293,7 @@ def create_product(
     if not name:
         raise HTTPException(status_code=400, detail="Product name is required")
     product = Product(
+        branch_id=current_user.branch_id,
         item_code=normalize_item_code(payload.item_code),
         name=name,
         price_code=normalize_item_code(payload.price_code),
@@ -256,7 +312,7 @@ def create_product(
         product.barcodes.append(ProductBarcode(barcode=barcode, is_primary=True, is_active=True))
     db.add(product)
     try:
-        ProductDictionaryService(db).sync_product(product)
+        ProductDictionaryService(db, branch_id=current_user.branch_id).sync_product(product)
         db.commit()
     except IntegrityError as exc:
         db.rollback()
@@ -273,7 +329,7 @@ def update_product(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> ProductRead:
     product = db.get(Product, product_id)
-    if product is None or product.deleted_at is not None:
+    if product is None or product.deleted_at is not None or not _belongs_to_branch(product, current_user.branch_id):
         raise HTTPException(status_code=404, detail="Product not found")
 
     if payload.item_code is not None:
@@ -307,7 +363,7 @@ def update_product(
         _replace_primary_barcode(product, normalize_barcode(payload.barcode))
 
     try:
-        ProductDictionaryService(db).sync_product(product)
+        ProductDictionaryService(db, branch_id=current_user.branch_id).sync_product(product)
         db.commit()
     except IntegrityError as exc:
         db.rollback()
@@ -323,7 +379,7 @@ async def import_products(
     file: UploadFile = File(...),
     converter_type: str | None = None,
 ) -> dict:
-    result = await ImportService(db).import_products(file, converter_type=converter_type)
+    result = await ImportService(db, branch_id=current_user.branch_id).import_products(file, converter_type=converter_type)
     db.commit()
     return result
 
@@ -364,6 +420,7 @@ def export_products(
             trade_mark=trade_mark,
             sort_by=sort_by,
             sort_dir=sort_dir,
+            branch_id=current_user.branch_id,
         )
     ).unique()
     service = ReferenceWorkbookService()
@@ -380,7 +437,7 @@ def backfill_product_names(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> dict:
-    result = MatchingService(db).backfill_product_names_from_orders()
+    result = MatchingService(db, branch_id=current_user.branch_id).backfill_product_names_from_orders()
     db.commit()
     return result
 
@@ -423,19 +480,25 @@ def _attachment_header(filename: str) -> str:
     return f'attachment; filename="{filename}"; filename*=UTF-8\'\'{quoted}'
 
 
-def _list_dictionary(db: Session, model) -> list:
+def _list_dictionary(db: Session, model, *, branch_id: int | None = None) -> list:
     return list(
         db.scalars(
             select(model)
-            .where(model.deleted_at.is_(None))
+            .where(model.deleted_at.is_(None), *_branch_filters(model, branch_id))
             .order_by(model.name.asc(), model.id.asc())
         )
     )
 
 
-def _list_dictionary_names(db: Session, model, *, normalize_as_type: bool = False) -> list[str]:
+def _list_dictionary_names(
+    db: Session,
+    model,
+    *,
+    branch_id: int | None = None,
+    normalize_as_type: bool = False,
+) -> list[str]:
     values: dict[str, str] = {}
-    for item in _list_dictionary(db, model):
+    for item in _list_dictionary(db, model, branch_id=branch_id):
         if not item.is_active:
             continue
         value = normalize_product_type(item.name) if normalize_as_type else normalize_text(item.name)
@@ -444,9 +507,20 @@ def _list_dictionary_names(db: Session, model, *, normalize_as_type: bool = Fals
     return sorted(values.values(), key=lambda value: value.casefold())
 
 
-def _merged_dictionary_values(db: Session, model, values: list[str]) -> list[str]:
+def _merged_dictionary_values(
+    db: Session,
+    model,
+    values: list[str],
+    *,
+    branch_id: int | None = None,
+) -> list[str]:
     merged: dict[str, str] = {value.casefold(): value for value in values if value}
-    for value in _list_dictionary_names(db, model, normalize_as_type=model is ProductTypeCatalog):
+    for value in _list_dictionary_names(
+        db,
+        model,
+        branch_id=branch_id,
+        normalize_as_type=model is ProductTypeCatalog,
+    ):
         merged.setdefault(value.casefold(), value)
     return sorted(merged.values(), key=lambda value: value.casefold())
 
@@ -456,6 +530,7 @@ def _create_dictionary_item(
     model,
     payload: ProductDictionaryCreate,
     *,
+    branch_id: int | None = None,
     normalize_as_type: bool = False,
 ):
     name = normalize_product_type(payload.name) if normalize_as_type else normalize_text(payload.name)
@@ -466,6 +541,7 @@ def _create_dictionary_item(
         select(model).where(
             model.normalized_name == normalized_name,
             model.deleted_at.is_(None),
+            *_branch_filters(model, branch_id),
         )
     )
     if existing is not None:
@@ -473,6 +549,7 @@ def _create_dictionary_item(
     item_kwargs = {
         "name": name,
         "normalized_name": normalized_name,
+        "branch_id": branch_id,
         "is_active": payload.is_active,
     }
     if hasattr(model, "warehouse_no"):
@@ -494,13 +571,14 @@ def _update_dictionary_item(
     item_id: int,
     payload: ProductDictionaryUpdate,
     *,
+    branch_id: int | None = None,
     normalize_as_type: bool = False,
 ):
     item = db.get(model, item_id)
-    if item is None or item.deleted_at is not None:
+    if item is None or item.deleted_at is not None or not _belongs_to_branch(item, branch_id):
         raise HTTPException(status_code=404, detail="Dictionary item not found")
     try:
-        ProductDictionaryService(db).update_dictionary_item(
+        ProductDictionaryService(db, branch_id=branch_id).update_dictionary_item(
             item,
             name=payload.name,
             warehouse_no=payload.warehouse_no,
@@ -516,3 +594,13 @@ def _update_dictionary_item(
         raise HTTPException(status_code=409, detail="Dictionary item already exists") from exc
     db.refresh(item)
     return item
+
+
+def _branch_filters(model, branch_id: int | None) -> tuple:
+    if branch_id is None:
+        return ()
+    return (model.branch_id == branch_id,)
+
+
+def _belongs_to_branch(entity, branch_id: int | None) -> bool:
+    return branch_id is None or getattr(entity, "branch_id", None) == branch_id

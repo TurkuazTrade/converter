@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.enums import OrderItemStatus, OrderStatus
+from app.models.branch import Branch
 from app.models.client import Client
 from app.models.mapping import ClientMapping, ProductMapping
 from app.models.order import Order, OrderItem
@@ -35,6 +36,19 @@ def test_matching_leaves_duplicate_active_barcode_unresolved(db_session: Session
 
     assert item.product_id is None
     assert item.status == OrderItemStatus.UNRESOLVED.value
+
+
+def test_matching_resolves_product_by_barcode_inside_order_branch(db_session: Session) -> None:
+    _branches(db_session)
+    _product(db_session, item_code="ERP-1", barcode="1234567890123", branch_id=1)
+    branch_product = _product(db_session, item_code="ERP-2", barcode="1234567890123", branch_id=2)
+    order, item = _order_with_item(db_session, barcode="1234567890123", branch_id=2)
+
+    MatchingService(db_session).match_order(order.id)
+
+    assert item.product_id == branch_product.id
+    assert item.item_code == "ERP-2"
+    assert item.status == OrderItemStatus.RESOLVED.value
 
 
 def test_matching_ignores_smoke_barcode_and_uses_item_code(db_session: Session) -> None:
@@ -230,6 +244,36 @@ def test_matching_resolves_client_by_second_name(db_session: Session) -> None:
     MatchingService(db_session).match_client(order)
 
     assert order.client_id == client.id
+
+
+def test_matching_resolves_client_inside_order_branch(db_session: Session) -> None:
+    _branches(db_session)
+    first = Client(
+        branch_id=1,
+        client_code="CLIENT-1",
+        name="Азия Ритейл",
+        normalized_name="азияритейл",
+        is_active=True,
+    )
+    second = Client(
+        branch_id=2,
+        client_code="CLIENT-2",
+        name="Азия Ритейл",
+        normalized_name="азияритейл",
+        is_active=True,
+    )
+    order = Order(
+        branch_id=2,
+        converter_type="asia_retail",
+        status=OrderStatus.PROCESSING.value,
+        parsed_snapshot={"client_hint": {"raw_name": "Азия Ритейл"}},
+    )
+    db_session.add_all([first, second, order])
+    db_session.flush()
+
+    MatchingService(db_session).match_client(order)
+
+    assert order.client_id == second.id
 
 
 def test_matching_resolves_client_by_normalized_second_name(db_session: Session) -> None:
@@ -517,8 +561,10 @@ def _product(
     name: str = "Product",
     barcode: str | None = None,
     conversion_multiplier: Decimal = Decimal("1"),
+    branch_id: int | None = None,
 ) -> Product:
     product = Product(
+        branch_id=branch_id,
         item_code=item_code,
         name=name,
         conversion_multiplier=conversion_multiplier,
@@ -539,14 +585,23 @@ def _product(
     return product
 
 
+def _branches(db_session: Session) -> None:
+    db_session.add_all(
+        [Branch(id=1, name="Branch 1", is_active=True), Branch(id=2, name="Branch 2", is_active=True)]
+    )
+    db_session.flush()
+
+
 def _order_with_item(
     db_session: Session,
     *,
     barcode: str | None,
     raw_name: str = "Raw product",
     client_id: int | None = None,
+    branch_id: int | None = None,
 ) -> tuple[Order, OrderItem]:
     order = Order(
+        branch_id=branch_id,
         converter_type="piton",
         client_id=client_id,
         status=OrderStatus.PROCESSING.value,

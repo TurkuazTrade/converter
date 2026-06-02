@@ -24,18 +24,23 @@ class ProductMatch:
 class MatchingService:
     """Reference-backed product/client matching."""
 
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, branch_id: int | None = None) -> None:
         self.db = db
+        self.branch_id = branch_id
 
     def match_order(self, order_id: int) -> None:
         order = self.db.get(Order, order_id)
         if order is None:
             return
+        branch_id = self._order_branch_id(order)
+        self._ensure_in_branch(order, branch_id=branch_id, entity_name="Order")
         self.match_client(order)
         for item in order.items:
-            self.match_item(order.converter_type or "", item)
+            self.match_item(order.converter_type or "", item, branch_id=branch_id)
 
     def match_client(self, order: Order) -> Client | None:
+        branch_id = self._order_branch_id(order)
+        self._ensure_in_branch(order, branch_id=branch_id, entity_name="Order")
         snapshot = order.parsed_snapshot or {}
         hint = snapshot.get("client_hint") or {}
         converter_type = order.converter_type or ""
@@ -61,6 +66,8 @@ class MatchingService:
                     ClientMapping.deleted_at.is_(None),
                     Client.deleted_at.is_(None),
                     Client.is_active.is_(True),
+                    *self._branch_filters(ClientMapping, branch_id),
+                    *self._branch_filters(Client, branch_id),
                     or_(*mapping_conditions),
                 )
             )
@@ -70,6 +77,7 @@ class MatchingService:
                     Client.client_code == client_code,
                     Client.deleted_at.is_(None),
                     Client.is_active.is_(True),
+                    *self._branch_filters(Client, branch_id),
                 )
             )
         if client is None and normalized_name:
@@ -78,10 +86,11 @@ class MatchingService:
                     Client.normalized_name == normalized_name,
                     Client.deleted_at.is_(None),
                     Client.is_active.is_(True),
+                    *self._branch_filters(Client, branch_id),
                 )
             )
         if client is None and normalized_name:
-            client = self._single_client_by_name_2(normalized_name)
+            client = self._single_client_by_name_2(normalized_name, branch_id=branch_id)
         if client is not None:
             order.client_id = client.id
         return client
@@ -90,7 +99,7 @@ class MatchingService:
         matches = list(self.db.scalars(stmt.limit(2)))
         return matches[0] if len(matches) == 1 else None
 
-    def _single_client_by_name_2(self, normalized_name: str) -> Client | None:
+    def _single_client_by_name_2(self, normalized_name: str, branch_id: int | None = None) -> Client | None:
         matches = [
             client
             for client in self.db.scalars(
@@ -98,13 +107,19 @@ class MatchingService:
                     Client.name_2.is_not(None),
                     Client.deleted_at.is_(None),
                     Client.is_active.is_(True),
+                    *self._branch_filters(Client, branch_id),
                 )
             )
             if normalize_key(client.name_2) == normalized_name
         ]
         return matches[0] if len(matches) == 1 else None
 
-    def match_item(self, converter_type: str, item: OrderItem) -> None:
+    def match_item(
+        self,
+        converter_type: str,
+        item: OrderItem,
+        branch_id: int | None = None,
+    ) -> None:
         if item.status == OrderItemStatus.SKIPPED.value:
             return
 
@@ -126,7 +141,7 @@ class MatchingService:
             item.error_message = "Quantity must be greater than zero."
             return
 
-        match = self._find_product_match(converter_type, item)
+        match = self._find_product_match(converter_type, item, branch_id=branch_id)
         if match is not None:
             multiplier = self._manual_multiplier(item) or match.conversion_multiplier
             item.product_id = match.product.id
@@ -149,6 +164,8 @@ class MatchingService:
         item = self.db.get(OrderItem, order_item_id)
         if item is None:
             raise ValueError("Order item not found.")
+        order = self.db.get(Order, item.order_id)
+        self._ensure_in_branch(order, branch_id=self._order_branch_id(order), entity_name="Order")
         item.product_id = None
         item.item_code = item.raw_item_code or item.normalized_barcode
         item.conversion_multiplier = Decimal("1")
@@ -175,7 +192,12 @@ class MatchingService:
             return None
         return multiplier if multiplier > 0 else None
 
-    def _find_product_match(self, converter_type: str, item: OrderItem) -> ProductMatch | None:
+    def _find_product_match(
+        self,
+        converter_type: str,
+        item: OrderItem,
+        branch_id: int | None = None,
+    ) -> ProductMatch | None:
         if item.normalized_barcode:
             mapped = self._single_product_mapping(
                 select(ProductMapping)
@@ -187,6 +209,8 @@ class MatchingService:
                     ProductMapping.deleted_at.is_(None),
                     Product.deleted_at.is_(None),
                     Product.is_active.is_(True),
+                    *self._branch_filters(ProductMapping, branch_id),
+                    *self._branch_filters(Product, branch_id),
                 )
             )
             if mapped is not None:
@@ -195,11 +219,14 @@ class MatchingService:
                     conversion_multiplier=self._product_multiplier(mapped.product),
                 )
 
-            by_barcode = self._single_product_by_barcode(item.normalized_barcode)
+            by_barcode = self._single_product_by_barcode(item.normalized_barcode, branch_id=branch_id)
             if by_barcode is not None:
                 return ProductMatch(product=by_barcode, conversion_multiplier=self._product_multiplier(by_barcode))
 
-            by_barcode_as_item_code = self._single_product_by_item_code(item.normalized_barcode)
+            by_barcode_as_item_code = self._single_product_by_item_code(
+                item.normalized_barcode,
+                branch_id=branch_id,
+            )
             if by_barcode_as_item_code is not None:
                 return ProductMatch(
                     product=by_barcode_as_item_code,
@@ -217,6 +244,8 @@ class MatchingService:
                     ProductMapping.deleted_at.is_(None),
                     Product.deleted_at.is_(None),
                     Product.is_active.is_(True),
+                    *self._branch_filters(ProductMapping, branch_id),
+                    *self._branch_filters(Product, branch_id),
                 )
             )
             if mapped_by_item_code is not None:
@@ -225,7 +254,7 @@ class MatchingService:
                     conversion_multiplier=self._product_multiplier(mapped_by_item_code.product),
                 )
 
-            by_code = self._single_product_by_item_code(item.raw_item_code)
+            by_code = self._single_product_by_item_code(item.raw_item_code, branch_id=branch_id)
             if by_code is not None:
                 return ProductMatch(product=by_code, conversion_multiplier=self._product_multiplier(by_code))
 
@@ -240,6 +269,8 @@ class MatchingService:
                     ProductMapping.deleted_at.is_(None),
                     Product.deleted_at.is_(None),
                     Product.is_active.is_(True),
+                    *self._branch_filters(ProductMapping, branch_id),
+                    *self._branch_filters(Product, branch_id),
                 )
             )
             if mapped_by_name is not None:
@@ -262,15 +293,20 @@ class MatchingService:
         if item is None or product is None:
             raise ValueError("Order item or product not found.")
         order = self.db.get(Order, item.order_id)
+        branch_id = self._order_branch_id(order)
+        self._ensure_in_branch(order, branch_id=branch_id, entity_name="Order")
+        self._ensure_in_branch(product, branch_id=branch_id, entity_name="Product")
         multiplier = self._multiplier(conversion_multiplier or item.conversion_multiplier)
         self._deactivate_conflicting_product_mappings(
             order.converter_type if order else "",
             product.id,
             item.normalized_barcode,
             normalize_key(item.raw_item_code),
+            branch_id=branch_id,
         )
         product.conversion_multiplier = multiplier
         mapping = ProductMapping(
+            branch_id=branch_id,
             converter_type=order.converter_type if order else "",
             raw_barcode=item.raw_barcode,
             normalized_barcode=item.normalized_barcode,
@@ -300,6 +336,7 @@ class MatchingService:
         product_id: int,
         normalized_barcode: str | None,
         normalized_item_code: str | None,
+        branch_id: int | None = None,
     ) -> None:
         match_conditions = []
         if normalized_barcode:
@@ -315,6 +352,7 @@ class MatchingService:
                 ProductMapping.is_active.is_(True),
                 ProductMapping.deleted_at.is_(None),
                 or_(*match_conditions),
+                *self._branch_filters(ProductMapping, branch_id),
             )
         ):
             mapping.is_active = False
@@ -323,6 +361,8 @@ class MatchingService:
         item = self.db.get(OrderItem, order_item_id)
         if item is None:
             raise ValueError("Order item not found.")
+        order = self.db.get(Order, item.order_id)
+        self._ensure_in_branch(order, branch_id=self._order_branch_id(order), entity_name="Order")
         multiplier = self._multiplier(conversion_multiplier)
         source_quantity = self._source_quantity(item)
         item.source_quantity = source_quantity
@@ -333,18 +373,20 @@ class MatchingService:
             item.product.conversion_multiplier = multiplier
 
     def backfill_product_names_from_orders(self) -> dict[str, int | str]:
-        items = list(
-            self.db.scalars(
-                select(OrderItem)
-                .options(selectinload(OrderItem.product))
-                .where(
-                    OrderItem.product_id.is_not(None),
-                    OrderItem.raw_name.is_not(None),
-                    OrderItem.status == OrderItemStatus.RESOLVED.value,
-                )
-                .order_by(OrderItem.id)
+        stmt = (
+            select(OrderItem)
+            .join(Order, OrderItem.order_id == Order.id)
+            .options(selectinload(OrderItem.product))
+            .where(
+                OrderItem.product_id.is_not(None),
+                OrderItem.raw_name.is_not(None),
+                OrderItem.status == OrderItemStatus.RESOLVED.value,
             )
+            .order_by(OrderItem.id)
         )
+        if self.branch_id is not None:
+            stmt = stmt.where(Order.branch_id == self.branch_id)
+        items = list(self.db.scalars(stmt))
         candidates: dict[int, Counter[str]] = defaultdict(Counter)
         products: dict[int, Product] = {}
         for item in items:
@@ -419,7 +461,7 @@ class MatchingService:
         matches = list(self.db.scalars(stmt.limit(2)))
         return matches[0] if len(matches) == 1 else None
 
-    def _single_product_by_barcode(self, barcode: str) -> Product | None:
+    def _single_product_by_barcode(self, barcode: str, branch_id: int | None = None) -> Product | None:
         matches = list(
             self.db.scalars(
                 select(Product)
@@ -431,13 +473,14 @@ class MatchingService:
                     ProductBarcode.deleted_at.is_(None),
                     Product.deleted_at.is_(None),
                     Product.is_active.is_(True),
+                    *self._branch_filters(Product, branch_id),
                 )
                 .limit(2)
             )
         )
         return matches[0] if len(matches) == 1 else None
 
-    def _single_product_by_item_code(self, item_code: str) -> Product | None:
+    def _single_product_by_item_code(self, item_code: str, branch_id: int | None = None) -> Product | None:
         normalized_item_code = normalize_text(item_code).casefold()
         if not normalized_item_code:
             return None
@@ -449,6 +492,7 @@ class MatchingService:
                     func.lower(Product.item_code) == normalized_item_code,
                     Product.deleted_at.is_(None),
                     Product.is_active.is_(True),
+                    *self._branch_filters(Product, branch_id),
                 )
             )
             if normalize_text(product.item_code).casefold() == normalized_item_code
@@ -461,6 +505,7 @@ class MatchingService:
                         Product.item_code.is_not(None),
                         Product.deleted_at.is_(None),
                         Product.is_active.is_(True),
+                        *self._branch_filters(Product, branch_id),
                     )
                 )
                 if normalize_text(product.item_code).casefold() == normalized_item_code
@@ -472,6 +517,9 @@ class MatchingService:
         client = self.db.get(Client, client_id)
         if order is None or client is None:
             raise ValueError("Order or client not found.")
+        branch_id = self._order_branch_id(order)
+        self._ensure_in_branch(order, branch_id=branch_id, entity_name="Order")
+        self._ensure_in_branch(client, branch_id=branch_id, entity_name="Client")
         hint = (order.parsed_snapshot or {}).get("client_hint") or {}
         normalized_client_name = normalize_key(hint.get("raw_name")) or None
         normalized_address = normalize_key(hint.get("raw_address")) or None
@@ -480,8 +528,10 @@ class MatchingService:
             client.id,
             normalized_client_name,
             normalized_address,
+            branch_id=branch_id,
         )
         mapping = ClientMapping(
+            branch_id=branch_id,
             converter_type=order.converter_type or "",
             raw_client_name=hint.get("raw_name"),
             normalized_client_name=normalized_client_name,
@@ -499,6 +549,7 @@ class MatchingService:
         client_id: int,
         normalized_client_name: str | None,
         normalized_address: str | None,
+        branch_id: int | None = None,
     ) -> None:
         conditions = []
         if normalized_client_name:
@@ -514,6 +565,25 @@ class MatchingService:
                 ClientMapping.is_active.is_(True),
                 ClientMapping.deleted_at.is_(None),
                 or_(*conditions),
+                *self._branch_filters(ClientMapping, branch_id),
             )
         ):
             mapping.is_active = False
+
+    def _order_branch_id(self, order: Order | None) -> int | None:
+        if self.branch_id is not None:
+            return self.branch_id
+        return order.branch_id if order is not None else None
+
+    @staticmethod
+    def _branch_filters(model, branch_id: int | None) -> tuple:
+        if branch_id is None:
+            return ()
+        return (model.branch_id == branch_id,)
+
+    @staticmethod
+    def _ensure_in_branch(entity, *, branch_id: int | None, entity_name: str) -> None:
+        if branch_id is None:
+            return
+        if entity is None or getattr(entity, "branch_id", None) != branch_id:
+            raise ValueError(f"{entity_name} does not belong to the current branch.")

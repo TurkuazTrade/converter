@@ -8,14 +8,28 @@ from sqlalchemy import inspect, text
 
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.core.constants import DEFAULT_BRANCH_ID, DEFAULT_BRANCH_NAME
 from app.core.logging import configure_logging
 from app.db.base import Base
 from app.db.session import SessionLocal, engine
+from app.models.branch import Branch
 from app.repositories.users import UserRepository
-from app.utils.normalization import normalize_key, normalize_product_type, normalize_text
+from app.utils.normalization import normalize_key, normalize_product_type, normalize_search_text, normalize_text
 
 configure_logging()
 settings.ensure_directories()
+
+_CLIENT_SEARCH_FIELDS = ("client_code", "name", "name_2", "address", "network_name")
+_PRODUCT_SEARCH_FIELDS = (
+    "name",
+    "item_code",
+    "price_code",
+    "exchange_code",
+    "article",
+    "trade_mark",
+    "brand",
+    "product_type",
+)
 
 
 def bootstrap_development_app() -> None:
@@ -26,34 +40,70 @@ def bootstrap_development_app() -> None:
     if not settings.auto_create_admin:
         return
     with SessionLocal() as db:
+        branch = db.get(Branch, DEFAULT_BRANCH_ID)
+        if branch is None:
+            branch = Branch(id=DEFAULT_BRANCH_ID, name=DEFAULT_BRANCH_NAME, is_active=True)
+            db.add(branch)
+            db.flush()
         users = UserRepository(db)
         users.ensure_user(
             email=settings.default_admin_email,
             password=settings.default_admin_password,
             full_name=settings.default_admin_full_name,
             role="admin",
+            branch_id=DEFAULT_BRANCH_ID,
         )
         users.ensure_user(
             email=settings.default_test_user_email,
             password=settings.default_test_user_password,
             full_name=settings.default_test_user_full_name,
             role="admin",
+            branch_id=DEFAULT_BRANCH_ID,
         )
         db.commit()
 
 
 def _ensure_development_columns() -> None:
-    inspector = inspect(engine)
-    table_names = set(inspector.get_table_names())
-    if "clients" not in table_names:
-        return
-    client_columns = {column["name"] for column in inspector.get_columns("clients")}
-    product_columns = (
-        {column["name"] for column in inspector.get_columns("products")}
-        if "products" in table_names
-        else set()
-    )
     with engine.begin() as connection:
+        inspector = inspect(connection)
+        table_names = set(inspector.get_table_names())
+        if "branches" not in table_names:
+            Base.metadata.tables["branches"].create(bind=connection)
+            table_names.add("branches")
+        connection.execute(
+            text(
+                """
+                INSERT OR IGNORE INTO branches
+                    (id, name, code, is_active, created_at, updated_at, deleted_at)
+                VALUES
+                    (:id, :name, NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL)
+                """
+            ),
+            {"id": DEFAULT_BRANCH_ID, "name": DEFAULT_BRANCH_NAME},
+        )
+        if "clients" not in table_names:
+            return
+        client_columns = {column["name"] for column in inspector.get_columns("clients")}
+        product_columns = (
+            {column["name"] for column in inspector.get_columns("products")}
+            if "products" in table_names
+            else set()
+        )
+        for table_name in (
+            "users",
+            "clients",
+            "products",
+            "product_mappings",
+            "client_mappings",
+            "orders",
+            "files",
+            "product_brands",
+            "product_trade_marks",
+            "product_types",
+            "product_type_export_rules",
+        ):
+            if table_name in table_names:
+                _ensure_development_branch_column(connection, inspector, table_name)
         order_columns = (
             {column["name"] for column in inspector.get_columns("orders")}
             if "orders" in table_names
@@ -65,14 +115,23 @@ def _ensure_development_columns() -> None:
             connection.execute(text("ALTER TABLE orders ADD COLUMN export_downloads JSON"))
         if "name_2" not in client_columns:
             connection.execute(text("ALTER TABLE clients ADD COLUMN name_2 VARCHAR(512)"))
+            client_columns.add("name_2")
+        if "search_text" not in client_columns:
+            connection.execute(text("ALTER TABLE clients ADD COLUMN search_text VARCHAR(2048) NOT NULL DEFAULT ''"))
+            client_columns.add("search_text")
         if "conversion_multiplier" not in product_columns:
             connection.execute(
                 text("ALTER TABLE products ADD COLUMN conversion_multiplier NUMERIC(14, 3) NOT NULL DEFAULT 1")
             )
+            product_columns.add("conversion_multiplier")
         if "exclude_from_export" not in product_columns:
             connection.execute(
                 text("ALTER TABLE products ADD COLUMN exclude_from_export BOOLEAN NOT NULL DEFAULT 0")
             )
+            product_columns.add("exclude_from_export")
+        if "search_text" not in product_columns:
+            connection.execute(text("ALTER TABLE products ADD COLUMN search_text VARCHAR(2048) NOT NULL DEFAULT ''"))
+            product_columns.add("search_text")
         for column_name, column_type in {
             "exchange_code": "VARCHAR(128)",
             "article": "VARCHAR(128)",
@@ -169,6 +228,154 @@ def _ensure_development_columns() -> None:
                     """
                 )
             )
+        _backfill_development_search_text(connection, "clients", _CLIENT_SEARCH_FIELDS)
+        _backfill_development_search_text(connection, "products", _PRODUCT_SEARCH_FIELDS)
+        _ensure_development_indexes(connection, table_names)
+
+
+def _ensure_development_branch_column(connection, inspector, table_name: str) -> None:
+    columns = {column["name"] for column in inspector.get_columns(table_name)}
+    if "branch_id" not in columns:
+        connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN branch_id INTEGER"))
+    connection.execute(
+        text(f"UPDATE {table_name} SET branch_id = :branch_id WHERE branch_id IS NULL"),
+        {"branch_id": DEFAULT_BRANCH_ID},
+    )
+
+
+def _backfill_development_search_text(connection, table_name: str, fields: tuple[str, ...]) -> None:
+    rows = connection.execute(
+        text(
+            f"""
+            SELECT id, {", ".join(fields)}
+            FROM {table_name}
+            WHERE search_text IS NULL OR search_text = ''
+            """
+        )
+    )
+    for row in rows:
+        values = row._mapping
+        connection.execute(
+            text(f"UPDATE {table_name} SET search_text = :search_text WHERE id = :id"),
+            {
+                "id": values["id"],
+                "search_text": normalize_search_text(*(values[field] for field in fields)),
+            },
+        )
+
+
+def _ensure_development_indexes(connection, table_names: set[str]) -> None:
+    if "products" in table_names:
+        _ensure_development_index(connection, "products", "ix_products_branch_id", ("branch_id",))
+        _ensure_development_index(connection, "products", "ix_products_branch_name", ("branch_id", "name"))
+        _ensure_development_index(
+            connection,
+            "products",
+            "ix_products_branch_deleted_name",
+            ("branch_id", "deleted_at", "name"),
+        )
+        _ensure_development_index(connection, "products", "ix_products_branch_search", ("branch_id", "search_text"))
+        _ensure_development_index(connection, "products", "ix_products_branch_brand", ("branch_id", "brand"))
+        _ensure_development_index(
+            connection,
+            "products",
+            "ix_products_branch_trade_mark",
+            ("branch_id", "trade_mark"),
+        )
+        _ensure_development_index(
+            connection,
+            "products",
+            "ix_products_branch_product_type",
+            ("branch_id", "product_type"),
+        )
+        _ensure_development_index(
+            connection,
+            "products",
+            "ix_products_branch_created_at",
+            ("branch_id", "created_at"),
+        )
+    if "clients" in table_names:
+        _ensure_development_index(connection, "clients", "ix_clients_branch_id", ("branch_id",))
+        _ensure_development_index(connection, "clients", "ix_clients_branch_name", ("branch_id", "name"))
+        _ensure_development_index(
+            connection,
+            "clients",
+            "ix_clients_branch_active_name",
+            ("branch_id", "deleted_at", "is_active", "name"),
+        )
+        _ensure_development_index(connection, "clients", "ix_clients_branch_search", ("branch_id", "search_text"))
+        _ensure_development_index(
+            connection,
+            "clients",
+            "ix_clients_network_address",
+            ("branch_id", "network_name", "normalized_address"),
+        )
+    if "orders" in table_names:
+        _ensure_development_index(connection, "orders", "ix_orders_branch_id", ("branch_id",))
+        _ensure_development_index(
+            connection,
+            "orders",
+            "ix_orders_branch_status_created",
+            ("branch_id", "status", "created_at"),
+        )
+        _ensure_development_index(
+            connection,
+            "orders",
+            "ix_orders_branch_created_at",
+            ("branch_id", "created_at"),
+        )
+    if "product_mappings" in table_names:
+        _ensure_development_index(connection, "product_mappings", "ix_product_mappings_branch_id", ("branch_id",))
+        _ensure_development_index(
+            connection,
+            "product_mappings",
+            "ix_product_mappings_branch_barcode",
+            ("branch_id", "converter_type", "normalized_barcode"),
+        )
+        _ensure_development_index(
+            connection,
+            "product_mappings",
+            "ix_product_mappings_branch_item_code",
+            ("branch_id", "converter_type", "normalized_item_code"),
+        )
+        _ensure_development_index(
+            connection,
+            "product_mappings",
+            "ix_product_mappings_branch_name",
+            ("branch_id", "converter_type", "normalized_name"),
+        )
+    if "client_mappings" in table_names:
+        _ensure_development_index(connection, "client_mappings", "ix_client_mappings_branch_id", ("branch_id",))
+        _ensure_development_index(
+            connection,
+            "client_mappings",
+            "ix_client_mappings_branch_name",
+            ("branch_id", "converter_type", "normalized_client_name"),
+        )
+        _ensure_development_index(
+            connection,
+            "client_mappings",
+            "ix_client_mappings_branch_address",
+            ("branch_id", "converter_type", "normalized_address"),
+        )
+
+
+def _ensure_development_index(
+    connection,
+    table_name: str,
+    index_name: str,
+    columns: tuple[str, ...],
+) -> None:
+    existing_columns = _development_index_columns(connection, index_name)
+    if existing_columns and existing_columns != columns:
+        connection.execute(text(f"DROP INDEX {index_name}"))
+    connection.execute(text(f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} ({', '.join(columns)})"))
+
+
+def _development_index_columns(connection, index_name: str) -> tuple[str, ...] | None:
+    rows = connection.execute(text(f"PRAGMA index_info({index_name})"))
+    columns = tuple(row._mapping["name"] for row in rows)
+    return columns or None
 
 
 def _backfill_development_product_dictionary(
@@ -182,7 +389,7 @@ def _backfill_development_product_dictionary(
     rows = connection.execute(
         text(
             f"""
-            SELECT id, {value_column} AS value
+            SELECT id, branch_id, {value_column} AS value
             FROM products
             WHERE deleted_at IS NULL
               AND {value_column} IS NOT NULL
@@ -198,33 +405,43 @@ def _backfill_development_product_dictionary(
         normalized_name = name if normalize_as_type else normalize_key(name)
         if not normalized_name:
             continue
+        branch_id = row._mapping["branch_id"] or DEFAULT_BRANCH_ID
         item_id = connection.execute(
             text(
                 f"""
                 SELECT id
                 FROM {table_name}
                 WHERE normalized_name = :normalized_name
+                  AND branch_id = :branch_id
                   AND deleted_at IS NULL
                 LIMIT 1
                 """
             ),
-            {"normalized_name": normalized_name},
+            {"normalized_name": normalized_name, "branch_id": branch_id},
         ).scalar_one_or_none()
         if item_id is None:
             connection.execute(
                 text(
                     f"""
                     INSERT INTO {table_name}
-                        (name, normalized_name, is_active, created_at, updated_at, deleted_at)
+                        (name, normalized_name, branch_id, is_active, created_at, updated_at, deleted_at)
                     VALUES
-                        (:name, :normalized_name, :is_active, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL)
+                        (:name, :normalized_name, :branch_id, :is_active, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL)
                     """
                 ),
-                {"name": name, "normalized_name": normalized_name, "is_active": True},
+                {"name": name, "normalized_name": normalized_name, "branch_id": branch_id, "is_active": True},
             )
             item_id = connection.execute(
-                text(f"SELECT id FROM {table_name} WHERE normalized_name = :normalized_name LIMIT 1"),
-                {"normalized_name": normalized_name},
+                text(
+                    f"""
+                    SELECT id
+                    FROM {table_name}
+                    WHERE normalized_name = :normalized_name
+                      AND branch_id = :branch_id
+                    LIMIT 1
+                    """
+                ),
+                {"normalized_name": normalized_name, "branch_id": branch_id},
             ).scalar_one()
         connection.execute(
             text(

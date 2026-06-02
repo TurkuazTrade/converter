@@ -56,7 +56,8 @@
   --app-focus-ring: 0 0 0 3px rgba(13, 129, 119, 0.2);
 }
 
-:root.theme-dark {
+:root.theme-dark,
+.app-shell[data-theme="dark"] {
   color-scheme: dark;
   --app-bg: #0d1412;
   --app-surface: #17231f;
@@ -79,6 +80,31 @@
   --app-shadow: 0 18px 48px rgba(0, 0, 0, 0.34);
   --app-shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.26);
   --app-focus-ring: 0 0 0 3px rgba(57, 198, 183, 0.24);
+}
+
+.app-shell[data-theme="light"] {
+  color-scheme: light;
+  --app-bg: #f4f7f6;
+  --app-surface: #ffffff;
+  --app-surface-muted: #eef4f2;
+  --app-surface-soft: rgba(255, 255, 255, 0.84);
+  --app-header: rgba(250, 252, 251, 0.88);
+  --app-sidebar: rgba(250, 252, 251, 0.86);
+  --app-border: #d8e2de;
+  --app-border-strong: #c4d3ce;
+  --app-text: #17201c;
+  --app-text-muted: #66736d;
+  --app-text-soft: #7a8c86;
+  --app-accent: #0d8177;
+  --app-accent-hover: #09655e;
+  --app-accent-soft: #d9f4ee;
+  --app-amber: #b7791f;
+  --app-amber-soft: #fff4d8;
+  --app-red: #b42318;
+  --app-red-soft: #fee4e2;
+  --app-shadow: 0 18px 45px rgba(24, 38, 32, 0.08);
+  --app-shadow-soft: 0 8px 26px rgba(24, 38, 32, 0.08);
+  --app-focus-ring: 0 0 0 3px rgba(13, 129, 119, 0.2);
 }
 
 body {
@@ -374,31 +400,31 @@ select.input {
   @apply min-w-0 truncate;
 }
 
-.sidebar-platform-links,
+.sidebar-service-links,
 .sidebar-controls {
   border-color: var(--app-border);
   @apply grid gap-2 border-t pt-4;
 }
 
-.sidebar-platform-links {
+.sidebar-service-links {
   @apply mt-auto;
 }
 
-.sidebar-platform-links a,
+.sidebar-service-links a,
 .sidebar-control {
   background: transparent;
   color: var(--app-text-muted);
   @apply flex min-h-[42px] w-full items-center gap-3 rounded-xl border-0 px-3 py-2 text-left text-sm font-bold transition;
 }
 
-.sidebar-platform-links a:hover,
+.sidebar-service-links a:hover,
 .sidebar-control:hover {
   background: var(--app-accent-soft);
   color: var(--app-accent-hover);
 }
 
 .sidebar-control:focus-visible,
-.sidebar-platform-links a:focus-visible {
+.sidebar-service-links a:focus-visible {
   box-shadow: var(--app-focus-ring);
   @apply outline-none;
 }
@@ -416,7 +442,7 @@ select.input {
 
 .sidebar-collapsed .sidebar-summary,
 .sidebar-collapsed .sidebar-link,
-.sidebar-collapsed .sidebar-platform-links a,
+.sidebar-collapsed .sidebar-service-links a,
 .sidebar-collapsed .sidebar-control {
   @apply justify-center px-0;
 }
@@ -425,7 +451,7 @@ select.input {
   @apply left-[-12px];
 }
 
-.sidebar-collapsed .sidebar-platform-links,
+.sidebar-collapsed .sidebar-service-links,
 .sidebar-collapsed .sidebar-controls {
   @apply gap-2;
 }

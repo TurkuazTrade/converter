@@ -21,7 +21,7 @@ def download_file(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> FileResponse:
-    file_row = FileRepository(db).get(file_id)
+    file_row = FileRepository(db, branch_id=current_user.branch_id).get(file_id)
     if file_row is None:
         raise HTTPException(status_code=404, detail="File not found")
     if not file_row.path:

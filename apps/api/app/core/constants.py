@@ -10,3 +10,6 @@ CONVERTER_FILENAME_PREFIXES: dict[str, str] = {
     "darkstore": "DarkStore",
     "alma": "Alma",
 }
+
+DEFAULT_BRANCH_ID = 1
+DEFAULT_BRANCH_NAME = "Основной филиал"

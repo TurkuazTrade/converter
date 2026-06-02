@@ -8,7 +8,7 @@ WORKDIR /app
 RUN pip install --no-cache-dir --upgrade pip
 
 COPY pyproject.toml /app/pyproject.toml
-RUN pip install --no-cache-dir -e ".[postgres]"
+RUN pip install --no-cache-dir -e .
 
 COPY . /app
 

@@ -30,7 +30,7 @@ def list_clients(
     limit: int = Query(default=100, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> list[ClientRead]:
-    return ClientRepository(db).list(search=search, limit=limit, offset=offset)
+    return ClientRepository(db, branch_id=current_user.branch_id).list(search=search, limit=limit, offset=offset)
 
 
 @router.post("", response_model=ClientRead)
@@ -44,6 +44,7 @@ def create_client(
     if not client_code or not name:
         raise HTTPException(status_code=400, detail="Client code and name are required")
     client = Client(
+        branch_id=current_user.branch_id,
         client_code=client_code,
         name=name,
         name_2=normalize_text(payload.name_2) or None,
@@ -71,7 +72,7 @@ def update_client(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> ClientRead:
     client = db.get(Client, client_id)
-    if client is None or client.deleted_at is not None:
+    if client is None or client.deleted_at is not None or not _belongs_to_branch(client, current_user.branch_id):
         raise HTTPException(status_code=404, detail="Client not found")
 
     if payload.client_code is not None:
@@ -108,7 +109,7 @@ async def import_clients(
     file: UploadFile = File(...),
     converter_type: str | None = None,
 ) -> dict:
-    result = await ImportService(db).import_clients(file, converter_type=converter_type)
+    result = await ImportService(db, branch_id=current_user.branch_id).import_clients(file, converter_type=converter_type)
     db.commit()
     return result
 
@@ -132,7 +133,9 @@ def export_clients(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> Response:
     clients = db.scalars(
-        select(Client).where(Client.deleted_at.is_(None)).order_by(Client.name, Client.client_code)
+        select(Client)
+        .where(Client.deleted_at.is_(None), *_branch_filters(Client, current_user.branch_id))
+        .order_by(Client.name, Client.client_code)
     )
     service = ReferenceWorkbookService()
     filename = "clients_filled.xlsx"
@@ -146,3 +149,13 @@ def export_clients(
 def _attachment_header(filename: str) -> str:
     quoted = quote(filename)
     return f'attachment; filename="{filename}"; filename*=UTF-8\'\'{quoted}'
+
+
+def _branch_filters(model, branch_id: int | None) -> tuple:
+    if branch_id is None:
+        return ()
+    return (model.branch_id == branch_id,)
+
+
+def _belongs_to_branch(entity, branch_id: int | None) -> bool:
+    return branch_id is None or getattr(entity, "branch_id", None) == branch_id

@@ -30,11 +30,37 @@ workers/integrations
 
 ## Boundaries
 
-- `apps/api`: auth, users, clients, products, orders, converter configs, matching, exports, API contracts.
+- `identity-service`: source of truth for human users, branches, roles, permissions, login, and JWT claims.
+- `apps/api`: converter domain data, branch-scoped clients/products/orders/files/mappings/dictionaries, matching, exports, API contracts.
 - `apps/web`: user-facing workflows only. It should not know internal worker details.
 - `workers/*`: asynchronous processing with explicit inputs and outputs.
 - `packages/shared`: shared contracts/helpers only when duplication becomes real.
 - `infra`: compose/deployment profiles, reverse proxy, environment templates.
+
+## Branch Ownership
+
+Branches are created and assigned to users in `identity-service`. The converter API does not own human-user branch assignment. On each authenticated request it reads Identity JWT claims, syncs a local shadow branch row when needed, and stores the current user's `branch_id` on converter-owned records.
+
+Identity tokens should provide a numeric active branch claim:
+
+```json
+{
+  "branch_id": 2,
+  "active_branch_id": 2,
+  "branch_code": "bishkek",
+  "branch_name": "Bishkek",
+  "branch": {
+    "id": 2,
+    "code": "bishkek",
+    "name": "Bishkek"
+  },
+  "branch_permissions_by_id": {
+    "2": ["converter.orders.read"]
+  }
+}
+```
+
+Converter tables keep `branch_id` for isolation and foreign keys. Imports, matching, product/client lookup, mappings, dictionaries, file history, orders, and exports are filtered by the current user's branch. The local `branches` table is only a shadow reference for stable IDs and names received from Identity.
 
 ## Extraction Rule
 

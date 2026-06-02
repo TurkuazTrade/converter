@@ -15,6 +15,7 @@ class File(Base, TimestampMixin):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), index=True)
     original_name: Mapped[str] = mapped_column(String(512), nullable=False)
     stored_name: Mapped[str] = mapped_column(String(512), nullable=False)
     storage_backend: Mapped[str] = mapped_column(
@@ -28,3 +29,4 @@ class File(Base, TimestampMixin):
     uploaded_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
 
     uploaded_by = relationship("User", back_populates="uploaded_files")
+    branch = relationship("Branch")

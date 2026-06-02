@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.enums import OrderItemStatus, OrderStatus
+from app.models.branch import Branch
 from app.models.client import Client
 from app.models.mapping import ClientMapping, ProductMapping
 from app.models.order import Order, OrderItem
@@ -151,6 +152,36 @@ async def test_import_products_updates_existing_item_code_without_case_sensitivi
     assert len(products) == 1
     assert product.name == "New name"
     assert product.conversion_multiplier == Decimal("2.000")
+
+
+@pytest.mark.asyncio
+async def test_import_products_keeps_same_item_code_separate_by_branch(db_session: Session) -> None:
+    db_session.add_all(
+        [Branch(id=1, name="Branch 1", is_active=True), Branch(id=2, name="Branch 2", is_active=True)]
+    )
+    db_session.flush()
+    first_upload = _upload_workbook(
+        "PITON CONVERT.xlsx",
+        {"convert": [["SKU_NO", "Name"], ["ERP-SAME", "Branch one product"]]},
+    )
+    second_upload = _upload_workbook(
+        "PITON CONVERT.xlsx",
+        {"convert": [["SKU_NO", "Name"], ["ERP-SAME", "Branch two product"]]},
+    )
+
+    first_result = await ImportService(db_session, branch_id=1).import_products(first_upload)
+    second_result = await ImportService(db_session, branch_id=2).import_products(second_upload)
+    db_session.flush()
+
+    products = list(
+        db_session.scalars(select(Product).where(Product.item_code == "ERP-SAME").order_by(Product.branch_id))
+    )
+    assert first_result["inserted"] == 1
+    assert second_result["inserted"] == 1
+    assert [(product.branch_id, product.name) for product in products] == [
+        (1, "Branch one product"),
+        (2, "Branch two product"),
+    ]
 
 
 @pytest.mark.asyncio

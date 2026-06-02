@@ -12,13 +12,20 @@ DictionaryModel: TypeAlias = type[ProductBrand] | type[ProductTradeMark] | type[
 
 
 class ProductDictionaryService:
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, branch_id: int | None = None) -> None:
         self.db = db
+        self.branch_id = branch_id
 
     def sync_product(self, product: Product) -> None:
-        brand = self.get_or_create(ProductBrand, product.brand)
-        trade_mark = self.get_or_create(ProductTradeMark, product.trade_mark)
-        product_type = self.get_or_create(ProductTypeCatalog, product.product_type, normalize_as_type=True)
+        branch_id = self.branch_id if self.branch_id is not None else product.branch_id
+        brand = self.get_or_create(ProductBrand, product.brand, branch_id=branch_id)
+        trade_mark = self.get_or_create(ProductTradeMark, product.trade_mark, branch_id=branch_id)
+        product_type = self.get_or_create(
+            ProductTypeCatalog,
+            product.product_type,
+            normalize_as_type=True,
+            branch_id=branch_id,
+        )
         product.brand_id = brand.id if brand else None
         product.trade_mark_id = trade_mark.id if trade_mark else None
         product.product_type_id = product_type.id if product_type else None
@@ -32,22 +39,24 @@ class ProductDictionaryService:
         value: object,
         *,
         normalize_as_type: bool = False,
+        branch_id: int | None = None,
     ):
         name = normalize_product_type(value) if normalize_as_type else normalize_text(value)
         if not name:
             return None
         normalized_name = self._normalized_key(name, normalize_as_type=normalize_as_type)
-        item = self.db.scalar(
-            select(model).where(
-                model.normalized_name == normalized_name,
-                model.deleted_at.is_(None),
-            )
+        stmt = select(model).where(
+            model.normalized_name == normalized_name,
+            model.deleted_at.is_(None),
         )
+        if branch_id is not None:
+            stmt = stmt.where(model.branch_id == branch_id)
+        item = self.db.scalar(stmt)
         if item is not None:
             if not item.name:
                 item.name = name
             return item
-        item = model(name=name, normalized_name=normalized_name, is_active=True)
+        item = model(name=name, normalized_name=normalized_name, branch_id=branch_id, is_active=True)
         self.db.add(item)
         self.db.flush()
         return item
