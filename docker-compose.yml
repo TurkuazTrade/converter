@@ -6,7 +6,7 @@ services:
       - ./apps/api/.env.example
     environment:
       - DATABASE_URL=sqlite:////data/app.db
-      - IDENTITY_API_URL=http://host.docker.internal:8020/api/v1
+      - IDENTITY_API_URL=http://host.docker.internal:8500/api/v1
       - IDENTITY_SECRET_KEY=dev-change-me-32-byte-secret-key-for-turkuaz-identity
       - IDENTITY_ALGORITHM=HS256
       - STORAGE_ROOT=/data/storage
@@ -15,15 +15,15 @@ services:
       - ./apps/api:/app
       - ./data:/data
     ports:
-      - "8000:8000"
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      - "8501:8501"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8501 --reload
     healthcheck:
       test:
         [
           "CMD",
           "python",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/ready', timeout=2)",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/api/v1/ready', timeout=2)",
         ]
       interval: 10s
       timeout: 3s
@@ -35,12 +35,12 @@ services:
       dockerfile: converter/web-crm/apps/web/Dockerfile
     environment:
       - VITE_API_URL=/api/v1
-      - VITE_PROXY_TARGET=http://api:8000
+      - VITE_PROXY_TARGET=http://api:8501
     volumes:
       - ./apps/web:/workspace/converter/web-crm/apps/web
       - /workspace/converter/web-crm/apps/web/node_modules
     ports:
-      - "5173:5173"
+      - "7501:7501"
     depends_on:
       api:
         condition: service_healthy
