@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { AppShell, platformServiceLinks } from '@turkuaz/ui';
+import { AppShell, fetchServiceRegistry, serviceLinksFromRegistry } from '@turkuaz/ui';
+import type { ServiceRegistryItem } from '@turkuaz/ui';
 import { ClientsPage } from '../pages/ClientsPage';
 import { LoginPage } from '../pages/LoginPage';
 import { OrderPreviewPage } from '../pages/OrderPreviewPage';
@@ -57,10 +59,31 @@ const routeMeta = [
   },
 ];
 
+const IDENTITY_API_BASE_URL = import.meta.env.VITE_IDENTITY_API_BASE_URL || '/identity-api';
+
 function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const accessToken = localStorage.getItem('access_token');
+  const [registeredServices, setRegisteredServices] = useState<ServiceRegistryItem[]>([]);
+
+  useEffect(() => {
+    if (!accessToken) {
+      setRegisteredServices([]);
+      return undefined;
+    }
+    let cancelled = false;
+    void fetchServiceRegistry({ identityApiBaseUrl: IDENTITY_API_BASE_URL })
+      .then((services) => {
+        if (!cancelled) setRegisteredServices(services);
+      })
+      .catch(() => {
+        if (!cancelled) setRegisteredServices([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken]);
 
   if (!accessToken) {
     return <Navigate to="/login" replace />;
@@ -86,9 +109,7 @@ function Layout() {
     active: currentMeta.key === item.key,
     onClick: () => navigate(item.path),
   }));
-  const serviceLinks = platformServiceLinks.filter((link) => (
-    link.label !== 'Platform' && link.label !== 'Converter'
-  ));
+  const serviceLinks = serviceLinksFromRegistry(registeredServices, { currentServiceCode: 'converter' });
 
   return (
     <AppShell
