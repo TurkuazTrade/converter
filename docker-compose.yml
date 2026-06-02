@@ -36,6 +36,7 @@ services:
     environment:
       - VITE_API_URL=/api/v1
       - VITE_PROXY_TARGET=http://api:8501
+      - VITE_IDENTITY_PROXY_TARGET=http://host.docker.internal:8500
     volumes:
       - ./apps/web:/workspace/converter/web-crm/apps/web
       - /workspace/converter/web-crm/apps/web/node_modules
