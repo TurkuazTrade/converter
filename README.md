@@ -40,13 +40,13 @@ docker compose up --build
 Open the web app:
 
 ```text
-http://localhost:5173
+http://localhost:7501
 ```
 
 API base URL:
 
 ```text
-http://localhost:8000/api/v1
+http://localhost:8501/api/v1
 ```
 
 The Docker stack mounts `./data` into the API container, so local SQLite data and generated files stay on the host.
@@ -77,7 +77,7 @@ uvicorn app.main:app --reload
 Useful checks:
 
 ```bash
-curl http://localhost:8000/api/v1/health
+curl http://localhost:8501/api/v1/health
 pytest
 ```
 

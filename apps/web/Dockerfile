@@ -12,6 +12,6 @@ RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 COPY converter/web-crm/apps/web ./
 
-EXPOSE 5173
+EXPOSE 7501
 
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

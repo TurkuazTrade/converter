@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     default_test_user_password: str = "password"
     default_test_user_full_name: str = "Test User"
     backend_cors_origins: list[str] = Field(
-        default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"]
+        default_factory=lambda: ["http://localhost:7501", "http://127.0.0.1:7501"]
     )
     backend_cors_origin_regex: str | None = r"https://.*\.ngrok-free\.dev"
     storage_root: Path = Path("../../data/storage")

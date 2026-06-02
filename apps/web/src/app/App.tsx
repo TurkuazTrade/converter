@@ -101,7 +101,7 @@ function Layout() {
       navItems={navItems}
       sideLinks={[
         ...serviceLinks,
-        { href: 'http://localhost:8000/docs', label: 'Swagger', icon: 'file', permissions: ['converter.orders.read'] },
+        { href: 'http://localhost:8501/docs', label: 'Swagger', icon: 'file', permissions: ['converter.orders.read'] },
       ]}
       serviceName="Converter"
       pageTitle={currentMeta.title}
@@ -115,7 +115,7 @@ function Layout() {
       environment="local"
       version="v0.1.0"
       apiStatus="online"
-      footerLinks={[{ href: 'http://localhost:8000/docs', label: 'Swagger' }]}
+      footerLinks={[{ href: 'http://localhost:8501/docs', label: 'Swagger' }]}
       tokenStorageKeys={['access_token']}
     >
       <Routes>
