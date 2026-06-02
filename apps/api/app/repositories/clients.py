@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import re
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -10,66 +8,28 @@ from app.utils.normalization import normalize_key
 
 
 class ClientRepository:
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, branch_id: int | None = None) -> None:
         self.db = db
+        self.branch_id = branch_id
 
-    def list(self, search: str = "", limit: int = 100, offset: int = 0) -> list[Client]:
+    def list(
+        self,
+        search: str = "",
+        limit: int = 100,
+        offset: int = 0,
+        branch_id: int | None = None,
+    ) -> list[Client]:
         base = select(Client).where(Client.deleted_at.is_(None), Client.is_active.is_(True))
+        branch_scope = self.branch_id if branch_id is None else branch_id
+        if branch_scope is not None:
+            base = base.where(Client.branch_id == branch_scope)
         if not search:
             return list(self.db.scalars(base.order_by(Client.name).offset(offset).limit(limit)))
 
-        pattern = f"%{search}%"
-        stmt = base.where(
-            (Client.name.ilike(pattern))
-            | (Client.name_2.ilike(pattern))
-            | (Client.client_code.ilike(pattern))
-            | (Client.address.ilike(pattern))
-            | (Client.network_name.ilike(pattern))
-        ).order_by(Client.name).offset(offset).limit(limit)
-        results = list(self.db.scalars(stmt))
-        if results:
-            return results
-
-        tokens = [normalize_key(token) for token in re.split(r"\W+", search) if len(normalize_key(token)) >= 3]
-        if not tokens:
-            tokens = _fallback_tokens(search)
-        if not tokens:
+        search_key = normalize_key(search)
+        if not search_key:
             return []
-
-        candidates = list(self.db.scalars(base.order_by(Client.name).limit(1000)))
-        scored: list[tuple[int, Client]] = []
-        for client in candidates:
-            haystack = normalize_key(
-                " ".join(
-                    value or ""
-                    for value in (
-                        client.client_code,
-                        client.name,
-                        client.name_2,
-                        client.address,
-                        client.network_name,
-                    )
-                )
-            )
-            score = sum(1 for token in tokens if token in haystack)
-            if score:
-                scored.append((score, client))
-        scored.sort(key=lambda item: (-item[0], item[1].name))
-        return [client for _, client in scored[offset : offset + limit]]
-
-
-def _fallback_tokens(search: str) -> list[str]:
-    normalized = normalize_key(search)
-    known = [
-        "глобус",
-        "народный",
-        "спар",
-        "spar",
-        "достор",
-        "азия",
-        "ритейл",
-        "alma",
-        "алма",
-        "darkstore",
-    ]
-    return [token for token in known if token in normalized]
+        stmt = base.where(
+            Client.search_text.contains(search_key, autoescape=True)
+        ).order_by(Client.name).offset(offset).limit(limit)
+        return list(self.db.scalars(stmt))

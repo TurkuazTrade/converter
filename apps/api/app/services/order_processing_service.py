@@ -21,10 +21,12 @@ class OrderProcessingService:
     def __init__(
         self,
         db: Session,
+        branch_id: int | None = None,
         storage: LocalStorageService | None = None,
         registry: ConverterRegistryService | None = None,
     ) -> None:
         self.db = db
+        self.branch_id = branch_id
         self.storage = storage or LocalStorageService()
         self.registry = registry or ConverterRegistryService()
 
@@ -36,7 +38,7 @@ class OrderProcessingService:
         force: bool = False,
     ) -> tuple[Order | None, bool, int | None, str]:
         stored = await self.storage.save_source(upload_file, user_id=user_id)
-        existing = OrderRepository(self.db).find_by_source_hash(stored.sha256)
+        existing = OrderRepository(self.db, branch_id=self.branch_id).find_by_source_hash(stored.sha256)
         if existing and not force and self._should_reuse_duplicate(existing, converter_type):
             self._discard_source_if_needed(stored)
             self._event(
@@ -51,6 +53,7 @@ class OrderProcessingService:
         file_row = self._persist_file(stored, user_id)
         detected = converter_type or self._detect_converter(stored)
         order = Order(
+            branch_id=self.branch_id,
             converter_type=detected,
             converter_version=None,
             converter_config_hash=None,
@@ -115,7 +118,7 @@ class OrderProcessingService:
                 {"warnings": parsed.warnings, "sheet": parsed.sheet_name},
                 user_id,
             )
-            MatchingService(self.db).match_order(order.id)
+            MatchingService(self.db, branch_id=self.branch_id).match_order(order.id)
             unresolved_count = sum(
                 1
                 for item in order.items
@@ -159,6 +162,9 @@ class OrderProcessingService:
         order = OrderRepository(self.db).get(order_id)
         if order is None:
             raise ValueError("Order not found.")
+        branch_id = self.branch_id if self.branch_id is not None else order.branch_id
+        if branch_id is not None and order.branch_id != branch_id:
+            raise ValueError("Order not found.")
         if order.source_file is None:
             raise ValueError("Order has no source file.")
         if not order.source_file.path or not Path(order.source_file.path).exists():
@@ -192,7 +198,7 @@ class OrderProcessingService:
                 )
             )
         self.db.flush()
-        MatchingService(self.db).match_order(order.id)
+        MatchingService(self.db, branch_id=branch_id).match_order(order.id)
         unresolved_count = sum(
             1
             for item in order.items
@@ -273,6 +279,7 @@ class OrderProcessingService:
 
     def _persist_file(self, stored: StoredObject, user_id: int | None) -> File:
         file_row = File(
+            branch_id=self.branch_id,
             original_name=stored.original_name,
             stored_name=stored.stored_name,
             storage_backend=stored.storage_backend.value,

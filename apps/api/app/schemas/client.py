@@ -9,6 +9,7 @@ class ClientRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    branch_id: int | None = None
     client_code: str | None
     name: str
     name_2: str | None

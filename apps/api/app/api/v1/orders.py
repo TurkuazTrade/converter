@@ -42,7 +42,10 @@ async def upload_order(
 ) -> UploadOrderResponse:
     from app.services.order_processing_service import OrderProcessingService
 
-    order, duplicate, existing_order_id, message = await OrderProcessingService(db).upload_order(
+    order, duplicate, existing_order_id, message = await OrderProcessingService(
+        db,
+        branch_id=current_user.branch_id,
+    ).upload_order(
         upload_file=file,
         user_id=current_user.id,
         converter_type=converter_type,
@@ -64,7 +67,7 @@ def list_orders(
     limit: int = Query(default=100, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> list[OrderRead]:
-    return OrderRepository(db).list(limit=limit, offset=offset)
+    return OrderRepository(db, branch_id=current_user.branch_id).list(limit=limit, offset=offset)
 
 
 @router.get("/export-sequence", response_model=ExportSequenceRead)
@@ -72,7 +75,7 @@ def get_export_sequence(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> ExportSequenceRead:
-    sequence_number = ExportService._next_export_sequence_number(db)
+    sequence_number = ExportService._next_export_sequence_number(db, branch_id=current_user.branch_id)
     db.commit()
     return ExportSequenceRead(
         sequence_number=sequence_number,
@@ -91,6 +94,7 @@ def update_export_sequence(
         sequence_number, updated = ExportService.set_next_export_sequence_number(
             db,
             requested_sequence_number,
+            branch_id=current_user.branch_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -109,10 +113,10 @@ def get_order(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> OrderDetail:
-    order = OrderRepository(db).get(order_id)
+    order = OrderRepository(db, branch_id=current_user.branch_id).get(order_id)
     if order is None:
         raise HTTPException(status_code=404, detail="Order not found")
-    _refresh_order_state(db, order)
+    _refresh_order_state(db, order, branch_id=current_user.branch_id)
     db.commit()
     return order
 
@@ -123,12 +127,12 @@ def order_preview(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> dict:
-    order = OrderRepository(db).get(order_id)
+    order = OrderRepository(db, branch_id=current_user.branch_id).get(order_id)
     if order is None:
         raise HTTPException(status_code=404, detail="Order not found")
-    _refresh_order_state(db, order)
+    _refresh_order_state(db, order, branch_id=current_user.branch_id)
     db.commit()
-    excluded_product_types = ExportService._excluded_product_types(db)
+    excluded_product_types = ExportService._excluded_product_types(db, branch_id=current_user.branch_id)
     return {
         "order": OrderDetail.model_validate(order).model_dump(mode="json"),
         "client": (
@@ -173,13 +177,13 @@ def order_debug(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> dict:
-    order = OrderRepository(db).get(order_id)
+    order = OrderRepository(db, branch_id=current_user.branch_id).get(order_id)
     if order is None:
         raise HTTPException(status_code=404, detail="Order not found")
-    _refresh_order_state(db, order)
+    _refresh_order_state(db, order, branch_id=current_user.branch_id)
     db.commit()
     sorted_items = sorted(order.items, key=lambda row: row.row_number or 0)
-    excluded_product_types = ExportService._excluded_product_types(db)
+    excluded_product_types = ExportService._excluded_product_types(db, branch_id=current_user.branch_id)
     status_counts: dict[str, int] = {}
     for item in sorted_items:
         status_counts[item.status] = status_counts.get(item.status, 0) + 1
@@ -244,10 +248,10 @@ def unresolved_items(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> dict:
-    order = OrderRepository(db).get(order_id)
+    order = OrderRepository(db, branch_id=current_user.branch_id).get(order_id)
     if order is None:
         raise HTTPException(status_code=404, detail="Order not found")
-    _refresh_order_state(db, order)
+    _refresh_order_state(db, order, branch_id=current_user.branch_id)
     db.commit()
     items = [
         {
@@ -277,13 +281,18 @@ def resolve_product(
 ) -> dict:
     order_item_id = int(payload["order_item_id"])
     product_id = int(payload["product_id"])
-    MatchingService(db).save_product_mapping(
-        order_item_id,
-        product_id,
-        current_user.id,
-        conversion_multiplier=_payload_decimal(payload.get("conversion_multiplier")),
-    )
-    ReprocessService(db).rematch_only(order_id, user_id=current_user.id)
+    if OrderRepository(db, branch_id=current_user.branch_id).get(order_id) is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    try:
+        MatchingService(db, branch_id=current_user.branch_id).save_product_mapping(
+            order_item_id,
+            product_id,
+            current_user.id,
+            conversion_multiplier=_payload_decimal(payload.get("conversion_multiplier")),
+        )
+        ReprocessService(db, branch_id=current_user.branch_id).rematch_only(order_id, user_id=current_user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.commit()
     return {"order_id": order_id, "order_item_id": order_item_id, "status": "resolved"}
 
@@ -296,8 +305,13 @@ def skip_product(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> dict:
     order_item_id = int(payload["order_item_id"])
-    MatchingService(db).skip_item(order_item_id)
-    ReprocessService(db).rematch_only(order_id, user_id=current_user.id)
+    if OrderRepository(db, branch_id=current_user.branch_id).get(order_id) is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    try:
+        MatchingService(db, branch_id=current_user.branch_id).skip_item(order_item_id)
+        ReprocessService(db, branch_id=current_user.branch_id).rematch_only(order_id, user_id=current_user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.commit()
     return {"order_id": order_id, "order_item_id": order_item_id, "status": "skipped"}
 
@@ -310,11 +324,16 @@ def update_multiplier(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> dict:
     order_item_id = int(payload["order_item_id"])
-    MatchingService(db).update_item_multiplier(
-        order_item_id,
-        conversion_multiplier=_payload_decimal(payload.get("conversion_multiplier")),
-    )
-    ReprocessService(db).rematch_only(order_id, user_id=current_user.id)
+    if OrderRepository(db, branch_id=current_user.branch_id).get(order_id) is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    try:
+        MatchingService(db, branch_id=current_user.branch_id).update_item_multiplier(
+            order_item_id,
+            conversion_multiplier=_payload_decimal(payload.get("conversion_multiplier")),
+        )
+        ReprocessService(db, branch_id=current_user.branch_id).rematch_only(order_id, user_id=current_user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.commit()
     return {"order_id": order_id, "order_item_id": order_item_id, "status": "updated"}
 
@@ -327,8 +346,13 @@ def resolve_client(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> dict:
     client_id = int(payload["client_id"])
-    MatchingService(db).save_client_mapping(order_id, client_id, current_user.id)
-    ReprocessService(db).rematch_only(order_id, user_id=current_user.id)
+    if OrderRepository(db, branch_id=current_user.branch_id).get(order_id) is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    try:
+        MatchingService(db, branch_id=current_user.branch_id).save_client_mapping(order_id, client_id, current_user.id)
+        ReprocessService(db, branch_id=current_user.branch_id).rematch_only(order_id, user_id=current_user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.commit()
     return {"order_id": order_id, "client_id": client_id, "status": "resolved"}
 
@@ -340,7 +364,7 @@ def reprocess_order(
     current_user: Annotated[User, Depends(get_current_user)],
     mode: str = "rematch_only",
 ) -> dict:
-    service = ReprocessService(db)
+    service = ReprocessService(db, branch_id=current_user.branch_id)
     try:
         result = (
             service.full_reparse(order_id, user_id=current_user.id)
@@ -361,7 +385,13 @@ def export_order(
     product_type: str | None = None,
 ) -> dict:
     try:
-        result = _generate_export(db, order_id, current_user.id, product_type=product_type)
+        result = _generate_export(
+            db,
+            order_id,
+            current_user.id,
+            product_type=product_type,
+            branch_id=current_user.branch_id,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     db.commit()
@@ -382,10 +412,16 @@ def download_export(
     product_type: str | None = None,
 ) -> Response:
     try:
-        result = _generate_export(db, order_id, current_user.id, product_type=product_type)
+        result = _generate_export(
+            db,
+            order_id,
+            current_user.id,
+            product_type=product_type,
+            branch_id=current_user.branch_id,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    order = OrderRepository(db).get(order_id)
+    order = OrderRepository(db, branch_id=current_user.branch_id).get(order_id)
     previous_download = _export_download_info(order, product_type) if order is not None else None
     if order is not None:
         _mark_export_downloaded(order, product_type, current_user)
@@ -430,7 +466,7 @@ def download_source(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> FileResponse:
-    order = OrderRepository(db).get(order_id)
+    order = OrderRepository(db, branch_id=current_user.branch_id).get(order_id)
     if order is None or order.source_file is None:
         raise HTTPException(status_code=404, detail="Source file not found")
     if not order.source_file.path:
@@ -445,12 +481,25 @@ def download_source(
     )
 
 
-def _generate_export(db: Session, order_id: int, user_id: int, *, product_type: str | None = None):
-    order = OrderRepository(db).get(order_id)
+def _generate_export(
+    db: Session,
+    order_id: int,
+    user_id: int,
+    *,
+    product_type: str | None = None,
+    branch_id: int | None = None,
+):
+    order = OrderRepository(db, branch_id=branch_id).get(order_id)
     if order is None:
         raise ValueError("Order not found.")
-    ReprocessService(db).rematch_only(order_id, user_id=user_id)
-    return ExportService().export_order(db, order_id, user_id=user_id, product_type=product_type)
+    ReprocessService(db, branch_id=branch_id).rematch_only(order_id, user_id=user_id)
+    return ExportService().export_order(
+        db,
+        order_id,
+        user_id=user_id,
+        product_type=product_type,
+        branch_id=branch_id,
+    )
 
 
 def _mark_export_downloaded(order: Order, product_type: str | None, user: User) -> None:
@@ -477,10 +526,10 @@ def _export_download_info(order: Order, product_type: str | None) -> dict | None
     return None
 
 
-def _refresh_order_state(db: Session, order: Order) -> None:
+def _refresh_order_state(db: Session, order: Order, *, branch_id: int | None = None) -> None:
     if order.status == OrderStatus.FAILED.value:
         return
-    MatchingService(db).match_order(order.id)
+    MatchingService(db, branch_id=branch_id).match_order(order.id)
     unresolved_count = sum(
         1
         for item in order.items

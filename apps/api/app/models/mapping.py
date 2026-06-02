@@ -11,6 +11,9 @@ from app.db.base import Base, SoftDeleteMixin, TimestampMixin
 class ProductMapping(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "product_mappings"
     __table_args__ = (
+        Index("ix_product_mappings_branch_barcode", "branch_id", "converter_type", "normalized_barcode"),
+        Index("ix_product_mappings_branch_item_code", "branch_id", "converter_type", "normalized_item_code"),
+        Index("ix_product_mappings_branch_name", "branch_id", "converter_type", "normalized_name"),
         Index("ix_product_mappings_barcode", "converter_type", "normalized_barcode"),
         Index("ix_product_mappings_item_code", "converter_type", "normalized_item_code"),
         Index("ix_product_mappings_name", "converter_type", "normalized_name"),
@@ -23,6 +26,7 @@ class ProductMapping(Base, TimestampMixin, SoftDeleteMixin):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), index=True)
     converter_type: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     raw_barcode: Mapped[str | None] = mapped_column(String(64), index=True)
     normalized_barcode: Mapped[str | None] = mapped_column(String(64), index=True)
@@ -37,6 +41,7 @@ class ProductMapping(Base, TimestampMixin, SoftDeleteMixin):
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
+    branch = relationship("Branch")
     product = relationship("Product")
     created_by = relationship("User")
 
@@ -44,11 +49,14 @@ class ProductMapping(Base, TimestampMixin, SoftDeleteMixin):
 class ClientMapping(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "client_mappings"
     __table_args__ = (
+        Index("ix_client_mappings_branch_name", "branch_id", "converter_type", "normalized_client_name"),
+        Index("ix_client_mappings_branch_address", "branch_id", "converter_type", "normalized_address"),
         Index("ix_client_mappings_name", "converter_type", "normalized_client_name"),
         Index("ix_client_mappings_address", "converter_type", "normalized_address"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), index=True)
     converter_type: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     raw_client_name: Mapped[str | None] = mapped_column(String(512))
     normalized_client_name: Mapped[str | None] = mapped_column(String(512), index=True)
@@ -58,5 +66,6 @@ class ClientMapping(Base, TimestampMixin, SoftDeleteMixin):
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
+    branch = relationship("Branch")
     client = relationship("Client")
     created_by = relationship("User")

@@ -9,14 +9,17 @@ from app.services.order_processing_service import OrderProcessingService
 
 
 class ReprocessService:
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, branch_id: int | None = None) -> None:
         self.db = db
+        self.branch_id = branch_id
 
     def rematch_only(self, order_id: int, user_id: int | None = None) -> dict:
         order = self.db.get(Order, order_id)
         if order is None:
             raise ValueError("Order not found.")
-        MatchingService(self.db).match_order(order_id)
+        if self.branch_id is not None and order.branch_id != self.branch_id:
+            raise ValueError("Order not found.")
+        MatchingService(self.db, branch_id=self.branch_id).match_order(order_id)
         unresolved_count = sum(
             1
             for item in order.items
@@ -41,7 +44,7 @@ class ReprocessService:
         return {"status": order.status, "mode": "rematch_only", "order_id": order_id}
 
     def full_reparse(self, order_id: int, user_id: int | None = None) -> dict:
-        order = OrderProcessingService(self.db).reprocess_order(order_id, user_id=user_id)
+        order = OrderProcessingService(self.db, branch_id=self.branch_id).reprocess_order(order_id, user_id=user_id)
         return {"status": order.status, "mode": "full_reparse", "order_id": order_id}
 
     @staticmethod

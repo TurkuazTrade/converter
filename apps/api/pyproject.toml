@@ -1,7 +1,7 @@
 [project]
-name = "turkuaz-platform-api"
+name = "turkuaz-converter-api"
 version = "0.1.0"
-description = "Turkuaz platform API"
+description = "Turkuaz converter API"
 requires-python = ">=3.12,<3.15"
 dependencies = [
     "alembic>=1.13.3",

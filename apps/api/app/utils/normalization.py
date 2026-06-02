@@ -21,6 +21,33 @@ def normalize_key(value: Any) -> str:
     return re.sub(r"[^0-9a-zа-я]+", "", text)
 
 
+def normalize_search_text(*values: Any) -> str:
+    return normalize_key(" ".join(normalize_text(value) for value in values if value is not None))
+
+
+def build_product_search_text(product: Any) -> str:
+    return normalize_search_text(
+        getattr(product, "name", None),
+        getattr(product, "item_code", None),
+        getattr(product, "price_code", None),
+        getattr(product, "exchange_code", None),
+        getattr(product, "article", None),
+        getattr(product, "trade_mark", None),
+        getattr(product, "brand", None),
+        getattr(product, "product_type", None),
+    )
+
+
+def build_client_search_text(client: Any) -> str:
+    return normalize_search_text(
+        getattr(client, "client_code", None),
+        getattr(client, "name", None),
+        getattr(client, "name_2", None),
+        getattr(client, "address", None),
+        getattr(client, "network_name", None),
+    )
+
+
 def normalize_barcode(value: Any) -> str | None:
     text = normalize_text(value)
     if not text:

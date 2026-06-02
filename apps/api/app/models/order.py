@@ -13,11 +13,14 @@ from app.db.base import Base, SoftDeleteMixin, TimestampMixin
 class Order(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "orders"
     __table_args__ = (
+        Index("ix_orders_branch_status_created", "branch_id", "status", "created_at"),
+        Index("ix_orders_branch_created_at", "branch_id", "created_at"),
         Index("ix_orders_status_created", "status", "created_at"),
         Index("ix_orders_converter_created", "converter_type", "created_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), index=True)
     order_number: Mapped[str | None] = mapped_column(String(128), index=True)
     converter_type: Mapped[str | None] = mapped_column(String(64), index=True)
     converter_version: Mapped[str | None] = mapped_column(String(32))
@@ -34,6 +37,7 @@ class Order(Base, TimestampMixin, SoftDeleteMixin):
     source_hash: Mapped[str | None] = mapped_column(String(64), index=True)
     duplicate_of_order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), index=True)
 
+    branch = relationship("Branch")
     uploaded_by = relationship("User", back_populates="uploaded_orders")
     client = relationship("Client")
     source_file = relationship("File", foreign_keys=[source_file_id])

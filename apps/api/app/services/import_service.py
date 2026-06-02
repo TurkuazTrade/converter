@@ -29,8 +29,9 @@ from app.utils.normalization import (
 
 
 class ImportService:
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, branch_id: int | None = None) -> None:
         self.db = db
+        self.branch_id = branch_id
         self.registry = ConverterRegistryService()
 
     async def import_reference_workbook(
@@ -85,7 +86,7 @@ class ImportService:
         rows = self._rows_from_excel(path, preferred_sheets=("convert",), kind="products")
         inserted = updated = skipped = mappings_inserted = 0
         skipped_rows: list[dict[str, Any]] = []
-        dictionary_service = ProductDictionaryService(self.db)
+        dictionary_service = ProductDictionaryService(self.db, branch_id=self.branch_id)
         seen_mappings: set[tuple[str, str, str, int]] = set()
         seen_barcodes: set[tuple[int, str]] = set()
         seen_products_by_barcode: dict[str, Product] = {}
@@ -140,6 +141,7 @@ class ImportService:
                 )
             if product is None:
                 product = Product(
+                    branch_id=self.branch_id,
                     item_code=item_code,
                     name=name,
                     price_code=price_code,
@@ -214,6 +216,7 @@ class ImportService:
             )
             if client is None:
                 client = Client(
+                    branch_id=self.branch_id,
                     client_code=client_code,
                     name=name or client_code or "Unknown client",
                     name_2=name_2,
@@ -545,6 +548,7 @@ class ImportService:
                     ProductBarcode.is_active.is_(True),
                     Product.deleted_at.is_(None),
                     Product.is_active.is_(True),
+                    *self._branch_filters(Product),
                 )
             )
             if product is not None:
@@ -582,6 +586,7 @@ class ImportService:
                 select(Product).where(
                     func.lower(Product.item_code) == normalized_item_code,
                     Product.deleted_at.is_(None),
+                    *self._branch_filters(Product),
                 )
             )
             if normalize_text(product.item_code).casefold() == normalized_item_code
@@ -593,6 +598,7 @@ class ImportService:
                     select(Product).where(
                         Product.item_code.is_not(None),
                         Product.deleted_at.is_(None),
+                        *self._branch_filters(Product),
                     )
                 )
                 if normalize_text(product.item_code).casefold() == normalized_item_code
@@ -609,6 +615,7 @@ class ImportService:
                 select(Product).where(
                     Product.deleted_at.is_(None),
                     Product.is_active.is_(True),
+                    *self._branch_filters(Product),
                 )
             )
             if normalize_key(product.name) == normalized_name
@@ -706,11 +713,13 @@ class ImportService:
 
     def _deactivate_conflicting_barcodes(self, product_id: int, barcode: str) -> None:
         for existing in self.db.scalars(
-            select(ProductBarcode).where(
+            select(ProductBarcode).join(Product, ProductBarcode.product_id == Product.id).where(
                 ProductBarcode.product_id != product_id,
                 ProductBarcode.barcode == barcode,
                 ProductBarcode.deleted_at.is_(None),
                 ProductBarcode.is_active.is_(True),
+                Product.deleted_at.is_(None),
+                *self._branch_filters(Product),
             )
         ):
             existing.is_active = False
@@ -774,6 +783,7 @@ class ImportService:
             ProductMapping.product_id == product.id,
             ProductMapping.deleted_at.is_(None),
             or_(*match_conditions),
+            *self._branch_filters(ProductMapping),
         ]
         existing_mapping = self.db.scalar(select(ProductMapping).where(*conditions))
         if existing_mapping is not None:
@@ -784,6 +794,7 @@ class ImportService:
 
         self.db.add(
             ProductMapping(
+                branch_id=self.branch_id,
                 converter_type=converter_type,
                 raw_barcode=barcode,
                 normalized_barcode=normalized_barcode,
@@ -824,6 +835,7 @@ class ImportService:
                 ProductMapping.is_active.is_(True),
                 ProductMapping.deleted_at.is_(None),
                 or_(*match_conditions),
+                *self._branch_filters(ProductMapping),
             )
         ):
             mapping.is_active = False
@@ -831,19 +843,29 @@ class ImportService:
     def _find_client(self, client_code: str | None, name: str | None) -> Client | None:
         if client_code:
             client = self.db.scalar(
-                select(Client).where(Client.client_code == client_code, Client.deleted_at.is_(None))
+                select(Client).where(
+                    Client.client_code == client_code,
+                    Client.deleted_at.is_(None),
+                    *self._branch_filters(Client),
+                )
             )
             if client is not None:
                 return client
         if name:
             return self.db.scalar(
                 select(Client).where(Client.normalized_name == normalize_key(name), Client.deleted_at.is_(None))
+                .where(*self._branch_filters(Client))
             )
         return None
 
     @staticmethod
     def _trusted_barcode_condition():
         return or_(ProductBarcode.source.is_(None), ProductBarcode.source != "smoke")
+
+    def _branch_filters(self, model) -> tuple:
+        if self.branch_id is None:
+            return ()
+        return (model.branch_id == self.branch_id,)
 
     def _save_client_mapping(
         self,
@@ -865,6 +887,7 @@ class ImportService:
                 ClientMapping.normalized_client_name == normalized_client_name,
                 ClientMapping.client_id == client.id,
                 ClientMapping.deleted_at.is_(None),
+                *self._branch_filters(ClientMapping),
             )
         )
         if exists is not None:
@@ -873,6 +896,7 @@ class ImportService:
             return False
         self.db.add(
             ClientMapping(
+                branch_id=self.branch_id,
                 converter_type=converter_type,
                 raw_client_name=raw_client_name,
                 normalized_client_name=normalized_client_name,

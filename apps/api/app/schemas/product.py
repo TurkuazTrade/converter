@@ -9,6 +9,7 @@ class ProductRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    branch_id: int | None = None
     item_code: str | None
     name: str
     price_code: str | None
@@ -70,6 +71,7 @@ class ProductUpdate(BaseModel):
 
 
 class ProductTypeExportRuleRead(BaseModel):
+    branch_id: int | None = None
     product_type: str
     exclude_from_export: bool
 
@@ -83,6 +85,7 @@ class ProductDictionaryRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    branch_id: int | None = None
     name: str
     warehouse_no: str | None = None
     is_active: bool

@@ -24,7 +24,7 @@ async def import_references(
 ) -> dict:
     if not import_products and not import_clients:
         raise HTTPException(status_code=400, detail="Select at least one reference type to import")
-    result = await ImportService(db).import_reference_workbook(
+    result = await ImportService(db, branch_id=current_user.branch_id).import_reference_workbook(
         file,
         converter_type=converter_type,
         import_products=import_products,

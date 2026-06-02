@@ -9,6 +9,7 @@ class OrderRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    branch_id: int | None = None
     order_number: str | None
     converter_type: str | None
     converter_version: str | None

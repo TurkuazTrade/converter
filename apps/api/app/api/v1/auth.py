@@ -98,4 +98,6 @@ def me(
         email=current_user.email,
         full_name=current_user.full_name,
         role=role,
+        branch_id=current_user.branch_id,
+        branch_name=current_user.branch.name if current_user.branch else None,
     )

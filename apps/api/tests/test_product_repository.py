@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from app.models.branch import Branch
 from app.models.product import Product
 from app.repositories.products import ProductRepository
 
@@ -95,6 +96,24 @@ def test_product_repository_filters_product_type_case_insensitive(db_session: Se
     products = ProductRepository(db_session).list(product_type="Flint")
 
     assert [product.item_code for product in products] == ["ERP-1"]
+
+
+def test_product_repository_filters_by_branch(db_session: Session) -> None:
+    db_session.add_all(
+        [Branch(id=1, name="Branch 1", is_active=True), Branch(id=2, name="Branch 2", is_active=True)]
+    )
+    db_session.flush()
+    db_session.add_all(
+        [
+            Product(branch_id=1, item_code="ERP-1", name="First branch", is_active=True),
+            Product(branch_id=2, item_code="ERP-2", name="Second branch", is_active=True),
+        ]
+    )
+    db_session.flush()
+
+    products = ProductRepository(db_session, branch_id=2).list()
+
+    assert [product.item_code for product in products] == ["ERP-2"]
 
 
 def test_product_repository_search_ignores_case_for_product_name(db_session: Session) -> None:

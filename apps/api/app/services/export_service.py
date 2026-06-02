@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.constants import DEFAULT_BRANCH_ID
 from app.core.constants import CONVERTER_FILENAME_PREFIXES
 from app.core.enums import OrderItemStatus, OrderStatus, ProcessingEventType
 from app.models.order import Order, OrderItem, ProcessingEvent
@@ -100,15 +101,18 @@ class ExportService:
         user_id: int | None = None,
         *,
         product_type: str | None = None,
+        branch_id: int | None = None,
     ) -> GeneratedExport:
         order = db.get(Order, order_id)
         if order is None:
             raise ValueError("Order not found.")
-        sequence_number = self._next_export_sequence_number(db)
+        if branch_id is not None and order.branch_id != branch_id:
+            raise ValueError("Order not found.")
+        sequence_number = self._next_export_sequence_number(db, branch_id=branch_id)
         payload = self._payload_from_order(
             order,
             sequence_number=sequence_number,
-            excluded_product_types=self._excluded_product_types(db),
+            excluded_product_types=self._excluded_product_types(db, branch_id=branch_id),
             product_type_filter=product_type,
         )
         export_sequence_count = self._export_sequence_count(payload)
@@ -142,7 +146,7 @@ class ExportService:
                 created_by_id=user_id,
             )
         )
-        self._store_export_sequence_number(db, export_sequence_next)
+        self._store_export_sequence_number(db, export_sequence_next, branch_id=branch_id)
         return result
 
     def build_export_bytes(self, order: ResolvedOrderExport) -> bytes:
@@ -299,47 +303,58 @@ class ExportService:
         )
 
     @staticmethod
-    def _next_export_sequence_number(db: Session) -> int:
-        setting = db.get(AppSetting, ExportService.EXPORT_SEQUENCE_SETTING_KEY)
+    def _next_export_sequence_number(db: Session, branch_id: int | None = None) -> int:
+        setting = db.get(AppSetting, ExportService._export_sequence_setting_key(branch_id))
         setting_sequence = ExportService._sequence_from_setting_value(
             setting.value if setting is not None else None
         )
         if setting_sequence is not None:
             return setting_sequence
 
-        sequence = ExportService._next_export_sequence_number_from_events(db)
-        ExportService._store_export_sequence_number(db, sequence)
+        sequence = ExportService._next_export_sequence_number_from_events(db, branch_id=branch_id)
+        ExportService._store_export_sequence_number(db, sequence, branch_id=branch_id)
         return sequence
 
     @staticmethod
-    def set_next_export_sequence_number(db: Session, sequence_number: int) -> tuple[int, bool]:
+    def set_next_export_sequence_number(
+        db: Session,
+        sequence_number: int,
+        branch_id: int | None = None,
+    ) -> tuple[int, bool]:
         if sequence_number < 0:
             raise ValueError("Export sequence number must be non-negative.")
         if sequence_number > ExportService.MAX_FICHE_SEQUENCE:
             raise ValueError("Export sequence number is too large.")
-        current_sequence = ExportService._next_export_sequence_number(db)
+        current_sequence = ExportService._next_export_sequence_number(db, branch_id=branch_id)
         if sequence_number <= current_sequence:
             return current_sequence, False
-        ExportService._store_export_sequence_number(db, sequence_number)
+        ExportService._store_export_sequence_number(db, sequence_number, branch_id=branch_id)
         return sequence_number, True
 
     @staticmethod
-    def _store_export_sequence_number(db: Session, sequence_number: int) -> None:
-        setting = db.get(AppSetting, ExportService.EXPORT_SEQUENCE_SETTING_KEY)
+    def _store_export_sequence_number(
+        db: Session,
+        sequence_number: int,
+        branch_id: int | None = None,
+    ) -> None:
+        setting = db.get(AppSetting, ExportService._export_sequence_setting_key(branch_id))
         value = {"sequence_number": max(sequence_number, 0)}
         if setting is None:
-            setting = AppSetting(key=ExportService.EXPORT_SEQUENCE_SETTING_KEY, value=value)
+            setting = AppSetting(key=ExportService._export_sequence_setting_key(branch_id), value=value)
             db.add(setting)
             return
         setting.value = value
 
     @staticmethod
-    def _next_export_sequence_number_from_events(db: Session) -> int:
+    def _next_export_sequence_number_from_events(db: Session, branch_id: int | None = None) -> int:
+        stmt = select(ProcessingEvent).where(
+            ProcessingEvent.event_type == ProcessingEventType.EXPORTED.value,
+        )
+        if branch_id is not None:
+            stmt = stmt.join(Order, ProcessingEvent.order_id == Order.id).where(Order.branch_id == branch_id)
         events = list(
             db.scalars(
-                select(ProcessingEvent).where(
-                    ProcessingEvent.event_type == ProcessingEventType.EXPORTED.value,
-                )
+                stmt
             )
         )
         if not events:
@@ -440,14 +455,23 @@ class ExportService:
         return fallback
 
     @staticmethod
-    def _excluded_product_types(db: Session) -> set[str]:
+    def _excluded_product_types(db: Session, branch_id: int | None = None) -> set[str]:
+        stmt = select(ProductTypeExportRule).where(ProductTypeExportRule.exclude_from_export.is_(True))
+        if branch_id is not None:
+            stmt = stmt.where(ProductTypeExportRule.branch_id == branch_id)
         return {
             rule.product_type.casefold()
             for rule in db.scalars(
-                select(ProductTypeExportRule).where(ProductTypeExportRule.exclude_from_export.is_(True))
+                stmt
             )
             if rule.product_type
         }
+
+    @staticmethod
+    def _export_sequence_setting_key(branch_id: int | None = None) -> str:
+        if branch_id in (None, DEFAULT_BRANCH_ID):
+            return ExportService.EXPORT_SEQUENCE_SETTING_KEY
+        return f"{ExportService.EXPORT_SEQUENCE_SETTING_KEY}:branch:{branch_id}"
 
     @staticmethod
     def _sorted_lines(lines: list[ExportLine]) -> list[ExportLine]:
