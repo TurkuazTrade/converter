@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { AppShell } from '@turkuaz/ui';
+import { AppShell, fetchServiceRegistry, serviceLinksFromRegistry } from '@turkuaz/ui';
+import type { ServiceRegistryItem } from '@turkuaz/ui';
 import { ClientsPage } from '../pages/ClientsPage';
 import { LoginPage } from '../pages/LoginPage';
 import { OrderPreviewPage } from '../pages/OrderPreviewPage';
@@ -58,57 +59,10 @@ const routeMeta = [
   },
 ];
 
-const IDENTITY_API_BASE_URL = import.meta.env.VITE_IDENTITY_API_BASE_URL || '/identity-api';
-
-type ServiceRegistryItem = {
-  code: string;
-  name: string;
-  base_url: string | null;
-  is_active?: boolean;
-};
-
 type AccessClaims = {
   permissions?: string[];
   branch_permissions?: Record<string, string[]>;
   branch_permissions_by_id?: Record<string, string[]>;
-};
-
-type ServiceLink = {
-  code?: string;
-  href: string;
-  label: string;
-  icon: 'banknote' | 'building' | 'database' | 'file' | 'users';
-  permissions?: string[];
-};
-
-const defaultServiceLinks: ServiceLink[] = [
-  {
-    code: 'identity',
-    href: 'http://localhost:7500',
-    label: 'Identity',
-    icon: 'users',
-    permissions: ['identity.users.read', 'identity.users.manage'],
-  },
-  {
-    code: 'payments',
-    href: 'http://localhost:7502',
-    label: 'Payments',
-    icon: 'banknote',
-    permissions: ['payments.transactions.read', 'payments.qr.create'],
-  },
-  {
-    code: 'market_parser',
-    href: 'http://localhost:7503',
-    label: 'Market Parser',
-    icon: 'database',
-    permissions: ['market_parser.products.read', 'market_parser.runs.read'],
-  },
-];
-
-const servicePermissions: Record<string, string[]> = {
-  identity: ['identity.users.read', 'identity.users.manage'],
-  payments: ['payments.transactions.read', 'payments.qr.create'],
-  market_parser: ['market_parser.products.read', 'market_parser.runs.read'],
 };
 
 const converterPermissions = [
@@ -117,46 +71,6 @@ const converterPermissions = [
   'converter.products.read',
   'converter.clients.read',
 ];
-
-async function fetchServiceRegistry(): Promise<ServiceRegistryItem[]> {
-  const token = localStorage.getItem('identity_access_token') || localStorage.getItem('access_token');
-  const response = await fetch(`${IDENTITY_API_BASE_URL}/services/my`, {
-    headers: {
-      Accept: 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
-  const data = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(data?.detail || data?.message || `HTTP ${response.status}`);
-  }
-  return data as ServiceRegistryItem[];
-}
-
-function serviceLinksFromRegistry(services: ServiceRegistryItem[], currentServiceCode: string): ServiceLink[] {
-  if (services.length === 0) return defaultServiceLinks;
-  return services
-    .filter((service) => (
-      service.is_active !== false &&
-      service.code !== currentServiceCode &&
-      Boolean(service.base_url)
-    ))
-    .map((service) => ({
-      code: service.code,
-      href: service.base_url || '',
-      label: service.name,
-      icon: iconForServiceCode(service.code),
-      permissions: servicePermissions[service.code] || [`${service.code}.*`],
-    }));
-}
-
-function iconForServiceCode(code: string): ServiceLink['icon'] {
-  if (code.includes('pay') || code.includes('cash') || code.includes('billing')) return 'banknote';
-  if (code.includes('user') || code.includes('identity') || code.includes('staff')) return 'users';
-  if (code.includes('branch') || code.includes('warehouse') || code.includes('office')) return 'building';
-  if (code.includes('doc') || code.includes('file') || code.includes('report')) return 'file';
-  return 'database';
-}
 
 function readShellClaims(token: string): AccessClaims {
   const claims = decodeTokenClaims(token);
@@ -187,7 +101,7 @@ function hasAnyPermission(claims: AccessClaims): boolean {
 function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const accessToken = localStorage.getItem('access_token');
+  const accessToken = localStorage.getItem('identity_access_token') || localStorage.getItem('access_token');
   const [registeredServices, setRegisteredServices] = useState<ServiceRegistryItem[]>([]);
 
   useEffect(() => {
@@ -214,6 +128,7 @@ function Layout() {
   const shellClaims = readShellClaims(accessToken);
 
   function logout() {
+    localStorage.removeItem('identity_access_token');
     localStorage.removeItem('access_token');
     window.location.href = '/login';
   }
@@ -233,7 +148,7 @@ function Layout() {
     active: currentMeta.key === item.key,
     onClick: () => navigate(item.path),
   }));
-  const serviceLinks = serviceLinksFromRegistry(registeredServices, 'converter');
+  const serviceLinks = serviceLinksFromRegistry(registeredServices, { currentServiceCode: 'converter' });
 
   return (
     <AppShell
@@ -262,7 +177,7 @@ function Layout() {
       version="v0.1.0"
       apiStatus="online"
       footerLinks={[{ href: 'http://localhost:8501/docs', label: 'Swagger' }]}
-      tokenStorageKeys={['access_token']}
+      tokenStorageKeys={['identity_access_token', 'access_token']}
     >
       <Routes>
         <Route path="/" element={<Navigate to="/upload" replace />} />

@@ -13,6 +13,7 @@ export function LoginPage() {
     setError('');
     try {
       const response = await api.post('/auth/login', { email, password });
+      localStorage.setItem('identity_access_token', response.data.access_token);
       localStorage.setItem('access_token', response.data.access_token);
       navigate('/upload');
     } catch {
