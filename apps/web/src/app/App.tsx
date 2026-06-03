@@ -71,6 +71,7 @@ const converterPermissions = [
   'converter.products.read',
   'converter.clients.read',
 ];
+const API_DOCS_URL = backendUrl(8501, '/docs');
 
 function readShellClaims(token: string): AccessClaims {
   const claims = decodeTokenClaims(token);
@@ -161,7 +162,7 @@ function Layout() {
       navItems={navItems}
       sideLinks={[
         ...serviceLinks,
-        { href: 'http://localhost:8501/docs', label: 'Swagger', icon: 'file', permissions: ['converter.orders.read'] },
+        { href: API_DOCS_URL, label: 'Swagger', icon: 'file', permissions: ['converter.orders.read'] },
       ]}
       accessClaims={shellClaims}
       serviceName="Converter"
@@ -176,7 +177,7 @@ function Layout() {
       environment="local"
       version="v0.1.0"
       apiStatus="online"
-      footerLinks={[{ href: 'http://localhost:8501/docs', label: 'Swagger' }]}
+      footerLinks={[{ href: API_DOCS_URL, label: 'Swagger' }]}
       tokenStorageKeys={['identity_access_token', 'access_token']}
     >
       <Routes>
@@ -202,4 +203,9 @@ export function App() {
       <Route path="/*" element={<Layout />} />
     </Routes>
   );
+}
+
+function backendUrl(port: number, path = ''): string {
+  if (typeof window === 'undefined') return `http://localhost:${port}${path}`;
+  return `${window.location.protocol}//${window.location.hostname}:${port}${path}`;
 }
