@@ -27,7 +27,7 @@ export function LoginPage() {
           <p className="mt-1 text-sm text-slate-400">Вход через единый модуль пользователей.</p>
         </div>
         <label className="block space-y-2">
-          <span className="text-sm text-slate-400">Email или логин</span>
+          <span className="text-sm text-slate-400">Email Identity</span>
           <input className="input w-full" value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
         <label className="block space-y-2">

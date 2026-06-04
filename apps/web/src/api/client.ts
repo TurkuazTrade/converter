@@ -56,6 +56,9 @@ export function clearToken(): void {
 }
 
 export async function loginViaIdentity(email: string, password: string): Promise<void> {
+  if (!email.trim().includes('@')) {
+    throw new Error('Введите email пользователя из Identity, не локальный логин конвертера.');
+  }
   const data = await requestIdentityJson<{ access_token: string }>('/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
@@ -108,7 +111,13 @@ async function requestIdentityJsonFromBase<T>(
   const data = await response.json().catch(() => null);
   if (!response.ok) {
     if (response.status === 401) clearToken();
-    throw new HttpError(response.status, data?.detail || data?.message || `HTTP ${response.status}`);
+    const message = identityErrorMessage(response.status, data);
+    throw new HttpError(
+      response.status,
+      response.status === 401
+        ? `${message}. Endpoint: ${url}`
+        : message,
+    );
   }
   if (!isJsonObject(data)) {
     throw new Error(`Identity returned non-JSON response from ${baseUrl}`);
@@ -131,6 +140,20 @@ function shouldRetryIdentityRequest(error: unknown): boolean {
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function identityErrorMessage(status: number, data: unknown): string {
+  const detail = isJsonObject(data) ? data.detail : null;
+  const message = isJsonObject(data) ? data.message : null;
+  if (typeof detail === 'string' && detail) return detail;
+  if (typeof message === 'string' && message) return message;
+  if (Array.isArray(detail)) {
+    const firstMessage = detail
+      .map((item) => (isJsonObject(item) && typeof item.msg === 'string' ? item.msg : null))
+      .find((item): item is string => Boolean(item));
+    if (firstMessage) return firstMessage;
+  }
+  return `Identity вернул HTTP ${status}`;
 }
 
 class HttpError extends Error {
