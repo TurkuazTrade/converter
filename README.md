@@ -97,6 +97,25 @@ npm run build
 
 The web app uses `VITE_API_URL` for API requests. Docker sets it to `/api/v1` and proxies to the API service.
 
+## Identity Login
+
+The converter frontend signs users in through Turkuaz Identity and stores the shared
+`identity_access_token`. Converter API requests then use that JWT as `Authorization: Bearer <token>`.
+
+For IIS/static frontend deployments, proxy these paths:
+
+```text
+IIS 7501 -> /api/* reverse proxy -> http://127.0.0.1:8501/api/*
+IIS 7501 -> /identity-api/* reverse proxy -> http://127.0.0.1:8500/api/v1/*
+```
+
+After deployment, these checks should return JSON:
+
+```text
+http://SERVER_IP_OR_DOMAIN:7501/ready
+http://SERVER_IP_OR_DOMAIN:7501/identity-api/ready
+```
+
 ## Data And Storage
 
 For local development:

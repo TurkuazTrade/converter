@@ -1,6 +1,6 @@
 import { FormEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../api/client';
+import { loginViaIdentity } from '../api/client';
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -12,12 +12,10 @@ export function LoginPage() {
     event.preventDefault();
     setError('');
     try {
-      const response = await api.post('/auth/login', { email, password });
-      localStorage.setItem('identity_access_token', response.data.access_token);
-      localStorage.setItem('access_token', response.data.access_token);
+      await loginViaIdentity(email, password);
       navigate('/upload');
-    } catch {
-      setError('Не удалось войти. Проверьте логин и пароль.');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Не удалось войти. Проверьте логин и пароль.');
     }
   }
 
